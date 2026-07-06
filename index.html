@@ -202,6 +202,22 @@ function blankData(){
     eventTypes:[], updatedAt: null,
   };
 }
+// Firebase's REST API omits keys that hold empty arrays/objects/null, so data
+// pulled from the cloud (or loaded from an older/partial local save) can be
+// missing fields entirely. This backfills every expected field with a safe
+// default so the rest of the app can assume they always exist.
+function normalizeData(d){
+  d = d && typeof d==='object' ? d : {};
+  d.events ||= []; d.income ||= []; d.expenses ||= [];
+  d.investments ||= []; d.staff ||= []; d.salaryPayments ||= [];
+  d.settings ||= {}; d.settings.youtubeApiKey ||= '';
+  if(!d.settings.cloudSync || !d.settings.cloudSync.url){
+    d.settings.cloudSync = {...DEFAULT_CLOUD_SYNC};
+  }
+  d.eventTypes ||= [];
+  d.updatedAt ||= null;
+  return d;
+}
 function loadData(){
   let raw;
   try{ raw = localStorage.getItem(STORAGE_KEY); }catch(e){ raw = null; }
@@ -210,15 +226,7 @@ function loadData(){
   }
   try{
     const d = JSON.parse(raw);
-    d.events ||= []; d.income ||= []; d.expenses ||= [];
-    d.investments ||= []; d.staff ||= []; d.salaryPayments ||= [];
-    d.settings ||= {}; d.settings.youtubeApiKey ||= '';
-    if(!d.settings.cloudSync || !d.settings.cloudSync.url){
-      d.settings.cloudSync = {...DEFAULT_CLOUD_SYNC};
-    }
-    d.eventTypes ||= [];
-    d.updatedAt ||= null;
-    return d;
+    return normalizeData(d);
   }catch(e){
     return blankData();
   }
@@ -314,12 +322,10 @@ async function initCloudSync(){
   if(!cloudSyncConfigured() || !DATA.settings.cloudSync.enabled) return;
   setCloudStatus('Checking for cloud data…');
   const cloud = await pullFromCloud();
-  if(cloud && cloud.events && (!DATA.updatedAt || (cloud.updatedAt && cloud.updatedAt > DATA.updatedAt))){
+  if(cloud && (!DATA.updatedAt || (cloud.updatedAt && cloud.updatedAt > DATA.updatedAt))){
     const myCloudSyncSettings = DATA.settings.cloudSync;
-    DATA = cloud;
-    DATA.settings = DATA.settings || {};
+    DATA = normalizeData(cloud);
     DATA.settings.cloudSync = myCloudSyncSettings; // keep this device's connection info authoritative
-    DATA.eventTypes ||= [];
     try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(DATA)); }catch(e){}
     setCloudStatus('Pulled latest data from the cloud ✓');
     render();
