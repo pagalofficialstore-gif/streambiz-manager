@@ -818,6 +818,8 @@ function viewEvents(){
             <td>${fmt(exp)}</td>
             <td style="color:${profit>=0?'#3ecf8e':'#ff5c5c'}">${fmt(profit)}</td>
             <td class="row-actions">
+              <button class="btn small" data-addincome="${e.id}">+ Sale</button>
+              <button class="btn small secondary" data-addexpense="${e.id}">+ Expense</button>
               <button class="btn small secondary" data-edit="${e.id}">Edit</button>
               <button class="btn danger" data-del="${e.id}">Delete</button>
             </td>
@@ -884,6 +886,20 @@ function wireEvents(){
         DATA.events = DATA.events.filter(e=>e.id!==btn.dataset.del);
         save(); render();
       }
+    };
+  });
+  document.querySelectorAll('[data-addincome]').forEach(btn=>{
+    btn.onclick = ()=>{
+      const rec = {id:null,date:todayStr(),category:INCOME_CATEGORIES[0],description:'',eventId:btn.dataset.addincome,amount:''};
+      openModal(incomeFormHtml(rec));
+      bindIncomeForm(null);
+    };
+  });
+  document.querySelectorAll('[data-addexpense]').forEach(btn=>{
+    btn.onclick = ()=>{
+      const rec = {id:null,date:todayStr(),category:EXPENSE_CATEGORIES[0],description:'',eventId:btn.dataset.addexpense,amount:''};
+      openModal(expenseFormHtml(rec));
+      bindExpenseForm(null);
     };
   });
   document.getElementById('bulkFetchBtn').onclick = async ()=>{
