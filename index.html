@@ -729,7 +729,7 @@ function bindInvoiceModal(ev, lineItems){
     lineItems.push({description:'',amount:''});
     renderRows(); recalcTotal();
   };
-  document.getElementById('invDownloadBtn').onclick = async ()=>{
+  document.getElementById('invDownloadBtn').onclick = ()=>{
     const number = document.getElementById('inv_number').value.trim() || formatInvoiceNumber((DATA.settings.invoiceSettings&&DATA.settings.invoiceSettings.nextNumber)||1);
     const date = document.getElementById('inv_date').value || todayStr();
     const notes = document.getElementById('inv_notes').value;
@@ -746,31 +746,35 @@ function bindInvoiceModal(ev, lineItems){
       DATA.settings.invoiceSettings.nextNumber = (DATA.settings.invoiceSettings.nextNumber||1) + 1;
       save();
     }
-    // Pre-resolve the YouTube thumbnail to a data: URI (needed so the PDF
-    // capture step in the print window can actually read its pixels back —
-    // a plain cross-origin <img> taints the canvas). This can take a moment
-    // on a slow connection, so show a quick "preparing" state on the button.
-    const btn = document.getElementById('invDownloadBtn');
-    let thumbDataUri = null;
-    if(ev.thumbnailUrl){
-      btn.disabled = true;
-      btn.textContent = 'Preparing…';
-      thumbDataUri = await imageUrlToDataUri(ev.thumbnailUrl);
+    // Open the invoice tab SYNCHRONOUSLY, right here in the click handler —
+    // iOS Safari only allows window.open() to skip the pop-up blocker when
+    // it happens immediately inside a real tap. Doing it after an `await`
+    // (like the thumbnail fetch below) gets silently blocked on iPhone, so
+    // we open a blank tab now and fill it in once the thumbnail is ready.
+    const win = window.open('', '_blank');
+    if(!win){
+      alert('Please allow pop-ups for this site so the invoice can open.');
+      return;
     }
+    win.document.write('<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Preparing invoice…</title></head><body style="font-family:sans-serif;color:#666;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;">Preparing your invoice…</body></html>');
+    const rec = {number, date, lineItems: cleanItems, total, notes};
+    // Pre-resolve the YouTube thumbnail to a data: URI (needed so the PDF
+    // capture step in the invoice tab can actually read its pixels back —
+    // a plain cross-origin <img> taints the canvas). This can take a moment
+    // on a slow connection; the tab is already open so there's nothing to
+    // block, it'll just fill in a moment later.
+    (async ()=>{
+      let thumbDataUri = null;
+      if(ev.thumbnailUrl){
+        thumbDataUri = await imageUrlToDataUri(ev.thumbnailUrl);
+      }
+      const html = buildInvoicePrintHtml(ev, rec, thumbDataUri);
+      win.document.open();
+      win.document.write(html);
+      win.document.close();
+    })();
     closeModal();
-    printInvoice(ev, {number, date, lineItems: cleanItems, total, notes}, thumbDataUri);
   };
-}
-function printInvoice(ev, rec, thumbDataUri){
-  const html = buildInvoicePrintHtml(ev, rec, thumbDataUri);
-  const win = window.open('', '_blank');
-  if(!win){
-    alert('Please allow pop-ups for this site so the invoice can open.');
-    return;
-  }
-  win.document.open();
-  win.document.write(html);
-  win.document.close();
 }
 function buildInvoicePrintHtml(ev, rec, thumbDataUri){
   const s = DATA.settings.invoiceSettings || DEFAULT_INVOICE_SETTINGS;
@@ -962,9 +966,11 @@ function buildInvoicePrintHtml(ev, rec, thumbDataUri){
   var FILENAME = 'Invoice-' + ${JSON.stringify(rec.number)} + '.pdf';
   var statusEl = document.getElementById('pdfStatus');
   var btn = document.getElementById('shareBtn');
+  var preparedBlob = null;
 
   async function buildPdfBlob(){
-    await (document.fonts && document.fonts.ready ? document.fonts.ready : Promise.resolve());
+    var fontsReady = (document.fonts && document.fonts.ready) ? document.fonts.ready : Promise.resolve();
+    await Promise.race([fontsReady, new Promise(function(r){ setTimeout(r, 3000); })]);
     var node = document.getElementById('invoicePage');
     var canvas = await html2canvas(node, {scale:2, useCORS:true, backgroundColor:'#ffffff'});
     var imgData = canvas.toDataURL('image/jpeg', 0.95);
@@ -982,32 +988,65 @@ function buildInvoicePrintHtml(ev, rec, thumbDataUri){
     return pdf.output('blob');
   }
 
-  async function shareOrDownload(){
+  function downloadFallback(blob){
+    // iOS Safari's anchor-click blob download is unreliable (it often just
+    // silently does nothing). Opening the PDF in a new tab instead lets
+    // Safari's built-in PDF viewer take over, which has its own working
+    // Share / Save-to-Files button.
+    var url = URL.createObjectURL(blob);
+    var opened = window.open(url, '_blank');
+    if(!opened){
+      var a = document.createElement('a');
+      a.href = url; a.download = FILENAME;
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    }
+    statusEl.textContent = 'PDF opened ✓';
+    setTimeout(function(){ URL.revokeObjectURL(url); }, 30000);
+  }
+
+  function prepare(){
     btn.disabled = true;
     statusEl.textContent = 'Preparing PDF…';
-    try{
-      var blob = await buildPdfBlob();
-      var file = new File([blob], FILENAME, {type:'application/pdf'});
-      if(navigator.canShare && navigator.canShare({files:[file]})){
-        statusEl.textContent = '';
-        await navigator.share({files:[file], title:FILENAME, text:'Invoice from ' + ${JSON.stringify(s.businessName||'Glownest Media')}});
-      } else {
-        var url = URL.createObjectURL(blob);
-        var a = document.createElement('a');
-        a.href = url; a.download = FILENAME;
-        document.body.appendChild(a); a.click(); document.body.removeChild(a);
-        setTimeout(function(){ URL.revokeObjectURL(url); }, 4000);
-        statusEl.textContent = 'PDF downloaded ✓';
-      }
-    }catch(e){
+    btn.textContent = '📤 Share / Download PDF';
+    return buildPdfBlob().then(function(blob){
+      preparedBlob = blob;
+      btn.disabled = false;
       statusEl.textContent = '';
-      if(e && e.name !== 'AbortError'){ // AbortError = user cancelled the native share sheet
-        alert('Could not generate the PDF: ' + (e.message||e));
-      }
-    }
-    btn.disabled = false;
+    }).catch(function(e){
+      preparedBlob = null;
+      btn.disabled = false;
+      statusEl.textContent = '';
+      btn.textContent = '📤 Retry — tap to prepare PDF';
+    });
   }
-  btn.onclick = shareOrDownload;
+
+  // Build the PDF as soon as the tab loads (in the background), so the
+  // Share button's click handler can call navigator.share() as its very
+  // first action with nothing awaited beforehand. iOS Safari only allows
+  // navigator.share() to run within a brief moment after a real tap — if
+  // anything (like html2canvas rendering) is awaited first, it silently
+  // fails on iPhone. Preparing ahead of time avoids that gap entirely.
+  prepare();
+
+  btn.onclick = function(){
+    if(!preparedBlob){
+      // Not ready yet, or the earlier attempt failed — try again; the next
+      // tap (once preparedBlob is set) will share/download immediately.
+      prepare();
+      return;
+    }
+    var blob = preparedBlob;
+    var file = new File([blob], FILENAME, {type:'application/pdf'});
+    if(navigator.canShare && navigator.canShare({files:[file]})){
+      navigator.share({files:[file], title:FILENAME, text:'Invoice from ' + ${JSON.stringify(s.businessName||'Glownest Media')}}).catch(function(e){
+        if(e && e.name !== 'AbortError'){ // AbortError = user cancelled the native share sheet
+          downloadFallback(blob);
+        }
+      });
+    } else {
+      downloadFallback(blob);
+    }
+  };
 
   ${upiLink ? `
   var payBtn = document.getElementById('payNow');
@@ -2911,546 +2950,4 @@ function computeReport(from, to, eventId){
   return {inc, exp, sal};
 }
 function renderReportBody(from, to, eventId){
-  const {inc, exp, sal} = computeReport(from, to, eventId);
-  const totalInc = totalIncome(inc);
-  const totalExp = totalExpenses(exp) + sal.reduce((s,r)=>s+Number(r.amount||0),0);
-  const net = totalInc - totalExp;
-
-  const byIncomeCat = {};
-  inc.forEach(r=>{ byIncomeCat[r.category] = (byIncomeCat[r.category]||0) + Number(r.amount||0); });
-  const byExpenseCat = {};
-  exp.forEach(r=>{ byExpenseCat[r.category] = (byExpenseCat[r.category]||0) + Number(r.amount||0); });
-  if(sal.length) byExpenseCat['Salary'] = (byExpenseCat['Salary']||0) + sal.reduce((s,r)=>s+Number(r.amount||0),0);
-
-  const maxIncomeCat = Math.max(1, ...Object.values(byIncomeCat));
-  const maxExpenseCat = Math.max(1, ...Object.values(byExpenseCat));
-
-  document.getElementById('reportBody').innerHTML = `
-    <div class="cards">
-      <div class="card"><div class="label">Total Income</div><div class="value pos">${fmt(totalInc)}</div></div>
-      <div class="card"><div class="label">Total Expenses</div><div class="value neg">${fmt(totalExp)}</div></div>
-      <div class="card"><div class="label">Net Profit</div><div class="value ${net>=0?'pos':'neg'}">${fmt(net)}</div></div>
-    </div>
-    <div class="panel">
-      <h2>Income by Category</h2>
-      ${Object.keys(byIncomeCat).length===0?'<div class="empty">No income in this range.</div>':
-        Object.entries(byIncomeCat).sort((a,b)=>b[1]-a[1]).map(([cat,val])=>`
-        <div class="stat-bar-row">
-          <div class="lbl">${escapeHtml(cat)}</div>
-          <div class="stat-bar-track"><div class="stat-bar-fill" style="width:${(val/maxIncomeCat*100)}%;background:#3ecf8e;"></div></div>
-          <div class="stat-bar-val">${fmt(val)}</div>
-        </div>`).join('')}
-    </div>
-    <div class="panel">
-      <h2>Expenses by Category</h2>
-      ${Object.keys(byExpenseCat).length===0?'<div class="empty">No expenses in this range.</div>':
-        Object.entries(byExpenseCat).sort((a,b)=>b[1]-a[1]).map(([cat,val])=>`
-        <div class="stat-bar-row">
-          <div class="lbl">${escapeHtml(cat)}</div>
-          <div class="stat-bar-track"><div class="stat-bar-fill" style="width:${(val/maxExpenseCat*100)}%;background:#ff5c5c;"></div></div>
-          <div class="stat-bar-val">${fmt(val)}</div>
-        </div>`).join('')}
-    </div>
-  `;
-}
-function csvEscape(v){
-  v = String(v??'');
-  if(/[",\n]/.test(v)) return '"' + v.replace(/"/g,'""') + '"';
-  return v;
-}
-function downloadCsv(filename, rows){
-  const csv = rows.map(row=>row.map(csvEscape).join(',')).join('\n');
-  const blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = filename;
-  document.body.appendChild(a); a.click(); document.body.removeChild(a);
-}
-function wireReports(){
-  renderReportBody('','','');
-  document.getElementById('r_apply').onclick = ()=>{
-    renderReportBody(
-      document.getElementById('r_from').value,
-      document.getElementById('r_to').value,
-      document.getElementById('r_event').value
-    );
-  };
-  document.getElementById('exportIncomeCsv').onclick = ()=>{
-    const rows = [['Date','Category','Description','Event','Amount']];
-    DATA.income.forEach(r=>rows.push([r.date,r.category,r.description,eventName(r.eventId),r.amount]));
-    downloadCsv('income.csv', rows);
-  };
-  document.getElementById('exportExpenseCsv').onclick = ()=>{
-    const rows = [['Date','Category','Description','Event','Amount']];
-    approvedExpenses().forEach(r=>rows.push([r.date,r.category,r.description,eventName(r.eventId),r.amount]));
-    downloadCsv('expenses.csv', rows);
-  };
-  document.getElementById('exportSalaryCsv').onclick = ()=>{
-    const rows = [['Date','Staff','Amount','Event','Notes']];
-    DATA.salaryPayments.forEach(r=>rows.push([r.date,staffName(r.staffId),r.amount,eventName(r.eventId),r.notes]));
-    downloadCsv('salaries.csv', rows);
-  };
-  document.getElementById('exportAllCsv').onclick = ()=>{
-    const header = ['Date','Type','Category','Description','Event','Amount'];
-    const data = [];
-    DATA.income.forEach(r=>data.push([r.date,'Income',r.category,r.description,eventName(r.eventId),r.amount]));
-    approvedExpenses().forEach(r=>data.push([r.date,'Expense',r.category,r.description,eventName(r.eventId),r.amount]));
-    DATA.salaryPayments.forEach(r=>data.push([r.date,'Expense','Salary','Salary: '+staffName(r.staffId),eventName(r.eventId),r.amount]));
-    data.sort((a,b)=>(a[0]||'').localeCompare(b[0]||''));
-    downloadCsv('full_profit_and_loss.csv', [header, ...data]);
-  };
-}
-
-// ============================================================
-// SETTINGS / BACKUP
-// ============================================================
-function viewSettings(){
-  const sizeKb = Math.round((JSON.stringify(DATA).length/1024)*10)/10;
-  return `
-    <h1>Backup / Settings</h1>
-    <div class="subtitle">Your data lives only in this browser. Export a backup regularly.</div>
-    <div class="panel">
-      <h2>Data Storage</h2>
-      <p style="color:var(--muted);font-size:13.5px;">
-        This app stores everything locally on your device using your browser's storage — nothing is uploaded anywhere.
-        That means: it's free forever, works offline, and only you can see your numbers.
-        It also means if you clear your browser data, or open this file in a different browser, your records won't be there —
-        so <strong>export a backup file after important updates</strong> and keep it somewhere safe (e.g. Google Drive, a USB drive).
-      </p>
-      <p style="color:var(--muted);font-size:13px;">Current data size: ${sizeKb} KB • ${DATA.events.length} events • ${DATA.income.length} income entries • ${DATA.expenses.length} expenses • ${DATA.investments.length} investments • ${DATA.staff.length} staff • ${DATA.salaryPayments.length} salary payments</p>
-      <div class="backup-box">
-        <button class="btn" id="exportBackup">⬇ Export Backup (JSON)</button>
-        <label class="btn secondary" style="cursor:pointer;">
-          ⬆ Import Backup (JSON)
-          <input type="file" id="importFile" accept="application/json" style="display:none;">
-        </label>
-        <button class="btn danger" id="wipeData" style="padding:9px 16px;font-size:13.5px;">Erase All Data</button>
-      </div>
-    </div>
-    <div class="panel">
-      <h2>Cloud Sync (Multi-Device)</h2>
-      <p style="color:var(--muted);font-size:13.5px;">
-        This copy of Glownest Media is wired to your Firebase database by default — 🔒 the connection is fixed, so opening
-        this same file on any other device syncs automatically with no setup. Nothing to paste, nothing to re-enter.
-      </p>
-      <div class="form-grid" style="max-width:520px;">
-        <div><label>Firebase Database URL</label><input id="cloudUrl" value="${escapeHtml((DATA.settings.cloudSync&&DATA.settings.cloudSync.url)||'')}" disabled></div>
-      </div>
-      <div class="field-row" style="max-width:520px;margin-top:10px;">
-        <div><label>Sync Code</label><input id="cloudCode" value="${escapeHtml((DATA.settings.cloudSync&&DATA.settings.cloudSync.code)||'')}" disabled></div>
-        <div style="flex:0 0 auto;align-self:flex-end;"><button class="btn secondary" id="genCodeBtn" type="button" disabled style="opacity:.5;cursor:not-allowed;">Generate</button></div>
-      </div>
-      <div style="margin-top:10px;display:flex;align-items:center;gap:8px;">
-        <input type="checkbox" id="cloudEnabled" ${(DATA.settings.cloudSync&&DATA.settings.cloudSync.enabled)?'checked':''} style="width:auto;">
-        <label for="cloudEnabled" style="margin:0;">Enable automatic sync</label>
-      </div>
-      <div class="backup-box" style="margin-top:12px;">
-        <button class="btn" id="saveCloudSync">Save</button>
-        <button class="btn secondary" id="cloudSyncNow">Sync Now</button>
-      </div>
-      <div class="note" id="cloudSyncStatus" style="margin-top:8px;">${DATA.settings.cloudSync&&DATA.settings.cloudSync.enabled ? 'Sync is on.' : 'Sync is off — data stays on this device only.'}</div>
-      <p style="margin-top:12px;"><a href="#" id="unlockCloudSync" style="color:var(--muted);font-size:12px;">Connect a different database instead (advanced)</a></p>
-    </div>
-    <div class="panel">
-      <h2>Google Sheets Backup</h2>
-      <p style="color:var(--muted);font-size:13.5px;">
-        Every change is automatically backed up to a Google Sheet you control — a plain JSON copy for exact restore,
-        plus readable tabs (Events, Income, Expenses, Investments, Staff, Salary Payments, Partners) you can open and
-        browse any time. If you ever lose this file or your local data, paste the same Web App URL here and click
-        "Restore from Sheet" to bring everything back.
-      </p>
-      <p style="color:var(--muted);font-size:12.5px;">
-        One-time setup (a free Google Apps Script "Web App" — takes a few minutes): open a new Google Sheet →
-        Extensions → Apps Script → paste in the backup script (see the Code.gs file provided with this app) →
-        Deploy → New deployment → type "Web app" → Execute as "Me", Who has access "Anyone" → Deploy → copy the
-        Web app URL and paste it below.
-      </p>
-      <div class="form-grid" style="max-width:520px;">
-        <div><label>Apps Script Web App URL</label><input id="sheetUrl" placeholder="https://script.google.com/macros/s/.../exec" value="${escapeHtml((DATA.settings.sheetSync&&DATA.settings.sheetSync.url)||'')}"></div>
-      </div>
-      <div style="margin-top:10px;display:flex;align-items:center;gap:8px;">
-        <input type="checkbox" id="sheetEnabled" ${(DATA.settings.sheetSync&&DATA.settings.sheetSync.enabled)?'checked':''} style="width:auto;">
-        <label for="sheetEnabled" style="margin:0;">Enable automatic backup</label>
-      </div>
-      <div class="backup-box" style="margin-top:12px;">
-        <button class="btn" id="saveSheetSync">Save</button>
-        <button class="btn secondary" id="sheetBackupNow">Backup Now</button>
-        <button class="btn secondary" id="sheetRestoreNow">Restore from Sheet</button>
-      </div>
-      <div class="note" id="sheetSyncStatus" style="margin-top:8px;">${DATA.settings.sheetSync&&DATA.settings.sheetSync.enabled ? 'Backup is on.' : 'Backup is off — set up the Web App URL above and enable it.'}</div>
-    </div>
-    <div class="panel">
-      <h2>Invoice Details</h2>
-      <p style="color:var(--muted);font-size:13.5px;">
-        These details print on every invoice you generate from an event's "🧾 Invoice" button. Leave anything
-        blank to simply omit it from the printed invoice — fill them in whenever you're ready. Invoices themselves
-        are never saved; only these details and the running invoice number are remembered.
-      </p>
-      <div class="form-grid" style="max-width:520px;">
-        <div><label>Business Name</label><input id="inv_s_name" value="${escapeHtml((DATA.settings.invoiceSettings&&DATA.settings.invoiceSettings.businessName)||'')}"></div>
-        <div><label>Phone</label><input id="inv_s_phone" value="${escapeHtml((DATA.settings.invoiceSettings&&DATA.settings.invoiceSettings.phone)||'')}"></div>
-      </div>
-      <div class="form-grid" style="max-width:520px;margin-top:10px;">
-        <div><label>Address</label><input id="inv_s_address" value="${escapeHtml((DATA.settings.invoiceSettings&&DATA.settings.invoiceSettings.address)||'')}"></div>
-        <div><label>GSTIN (optional)</label><input id="inv_s_gstin" value="${escapeHtml((DATA.settings.invoiceSettings&&DATA.settings.invoiceSettings.gstin)||'')}"></div>
-      </div>
-      <div class="form-grid" style="max-width:520px;margin-top:10px;">
-        <div><label>UPI ID (shows a "Pay Now" button + QR on the invoice)</label><input id="inv_s_upi" value="${escapeHtml((DATA.settings.invoiceSettings&&DATA.settings.invoiceSettings.upi)||'')}" placeholder="yourname@bank"></div>
-      </div>
-      <div style="margin-top:10px;">
-        <label>Bank Details (optional extra note, shown alongside UPI)</label>
-        <textarea id="inv_s_bank" placeholder="Account name, number, IFSC, etc.">${escapeHtml((DATA.settings.invoiceSettings&&DATA.settings.invoiceSettings.bankDetails)||'')}</textarea>
-      </div>
-      <div class="field-row" style="max-width:320px;margin-top:10px;">
-        <div><label>Invoice Number Prefix</label><input id="inv_s_prefix" value="${escapeHtml((DATA.settings.invoiceSettings&&DATA.settings.invoiceSettings.prefix)||'INV')}"></div>
-        <div><label>Next Number</label><input id="inv_s_next" type="number" min="1" value="${(DATA.settings.invoiceSettings&&DATA.settings.invoiceSettings.nextNumber)||1}"></div>
-      </div>
-      <button class="btn" id="saveInvoiceSettings" style="margin-top:12px;">Save</button>
-      <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--border);display:flex;flex-wrap:wrap;gap:24px;">
-        <div>
-          <label style="display:block;">Logo (shown on every invoice)</label>
-          <div style="display:flex;align-items:center;gap:10px;margin-top:6px;">
-            ${DATA.settings.invoiceSettings&&DATA.settings.invoiceSettings.logoImage
-              ? `<img src="${DATA.settings.invoiceSettings.logoImage}" style="height:40px;border-radius:6px;background:#0d1119;padding:4px;">`
-              : `<span class="note">No logo uploaded — business name is shown as text instead.</span>`}
-          </div>
-          <div style="margin-top:8px;display:flex;gap:8px;">
-            <label class="btn secondary" style="cursor:pointer;">Upload Logo<input type="file" id="inv_s_logo_file" accept="image/*" style="display:none;"></label>
-            ${DATA.settings.invoiceSettings&&DATA.settings.invoiceSettings.logoImage ? `<button class="btn danger" id="inv_s_logo_clear" type="button">Remove</button>` : ''}
-          </div>
-        </div>
-        <div>
-          <label style="display:block;">Payment QR Code (e.g. PhonePe/GPay QR)</label>
-          <div style="display:flex;align-items:center;gap:10px;margin-top:6px;">
-            ${DATA.settings.invoiceSettings&&DATA.settings.invoiceSettings.qrImage
-              ? `<img src="${DATA.settings.invoiceSettings.qrImage}" style="height:70px;width:70px;object-fit:cover;border-radius:6px;">`
-              : `<span class="note">No QR uploaded — invoice will just show the Pay Now button.</span>`}
-          </div>
-          <div style="margin-top:8px;display:flex;gap:8px;">
-            <label class="btn secondary" style="cursor:pointer;">Upload QR<input type="file" id="inv_s_qr_file" accept="image/*" style="display:none;"></label>
-            ${DATA.settings.invoiceSettings&&DATA.settings.invoiceSettings.qrImage ? `<button class="btn danger" id="inv_s_qr_clear" type="button">Remove</button>` : ''}
-          </div>
-        </div>
-      </div>
-    </div>
-    <div class="panel">
-      <h2>Event Categories</h2>
-      <p style="color:var(--muted);font-size:13.5px;">
-        Your own list of event types — there are no built-in presets. Add whatever categories fit your business
-        (Wedding, Roce, Birthday, Funeral, Church Event, Sports, etc.); they'll show up in the Event form's Type dropdown.
-      </p>
-      <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px;">
-        ${DATA.eventTypes.length===0 ? '<span class="note">No categories yet — add your first one below.</span>' :
-          DATA.eventTypes.map(t=>`<span class="pill" style="display:flex;align-items:center;gap:6px;">${escapeHtml(t)}<button data-del-type="${escapeHtml(t)}" style="background:none;border:none;color:var(--danger);cursor:pointer;font-size:13px;padding:0;line-height:1;">✕</button></span>`).join('')}
-      </div>
-      <div class="field-row" style="max-width:420px;">
-        <div><input id="newTypeInput" placeholder="e.g. Wedding"></div>
-        <div style="flex:0 0 auto;"><button class="btn secondary" id="addTypeBtn" type="button">+ Add</button></div>
-      </div>
-    </div>
-    <div class="panel">
-      <h2>Business Partners</h2>
-      <p style="color:var(--muted);font-size:13.5px;">
-        Add each partner in the business. Each partner gets a name + 4-digit PIN to log in on their own device —
-        every entry gets tagged with who made it, and expenses need the other partner's approval before they count.
-      </p>
-      <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px;">
-        ${DATA.partners.length===0 ? '<span class="note">No partners yet — add your first one below.</span>' :
-          DATA.partners.map(p=>`<span class="pill" style="display:flex;align-items:center;gap:6px;">${escapeHtml(p.name)}${p.pin?'':' <span style="color:var(--warn);">(no PIN)</span>'}<button data-set-pin="${escapeHtml(p.name)}" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:13px;padding:0;line-height:1;" title="Set/change PIN">🔑</button><button data-del-partner="${escapeHtml(p.name)}" style="background:none;border:none;color:var(--danger);cursor:pointer;font-size:13px;padding:0;line-height:1;">✕</button></span>`).join('')}
-      </div>
-      <div class="field-row" style="max-width:420px;">
-        <div><input id="newPartnerInput" placeholder="e.g. Rohan"></div>
-        <div style="flex:0 0 110px;"><input id="newPartnerPin" placeholder="4-digit PIN" maxlength="4" inputmode="numeric" pattern="[0-9]*"></div>
-        <div style="flex:0 0 auto;"><button class="btn secondary" id="addPartnerBtn" type="button">+ Add</button></div>
-      </div>
-    </div>
-    <div class="panel">
-      <h2>YouTube Auto-fill</h2>
-      <p style="color:var(--muted);font-size:13.5px;">
-        Paste a YouTube link in the Event form and click "Fetch Details" — the event name, date, and category
-        auto-fill straight from the link, no setup or account required. It works by reading the video's public
-        page details; only the link itself is sent out, never any of your business data.
-      </p>
-      <p style="color:var(--muted);font-size:13.5px;">
-        Adding a free YouTube Data API key below is optional. It makes the date/category lookup more reliable
-        and also pulls in channel name and view/like counts.
-      </p>
-      <p style="color:var(--muted);font-size:12.5px;">
-        Get a free key: Google Cloud Console → create a project → enable "YouTube Data API v3" → Credentials → Create API Key. No cost for normal usage.
-      </p>
-      <div class="form-grid" style="max-width:420px;">
-        <div><label>YouTube Data API Key (optional)</label><input id="ytApiKey" value="${escapeHtml((DATA.settings&&DATA.settings.youtubeApiKey)||'')}" placeholder="Paste your API key"></div>
-      </div>
-      <button class="btn" id="saveYtKey">Save Key</button>
-    </div>
-    <div class="panel">
-      <h2>About</h2>
-      <p style="color:var(--muted);font-size:13.5px;">
-        Glownest Media — built for livestream/event businesses to track event income & expenses, equipment investments, and staff salaries in one place.
-        This is a single HTML file: keep it, rename it, move it, back it up like any other document. No subscriptions, no accounts, no expiry.
-      </p>
-    </div>
-  `;
-}
-function wireSettings(){
-  document.getElementById('genCodeBtn').onclick = ()=>{
-    document.getElementById('cloudCode').value = generateSyncCode();
-  };
-  document.getElementById('unlockCloudSync').onclick = (e)=>{
-    e.preventDefault();
-    const pin = prompt('This connection is locked. Enter the PIN to change it:');
-    if(pin === null) return;
-    if(pin.trim() !== '1720'){
-      alert('Incorrect PIN.');
-      return;
-    }
-    ['cloudUrl','cloudCode'].forEach(id=>document.getElementById(id).disabled = false);
-    document.getElementById('genCodeBtn').disabled = false;
-    document.getElementById('genCodeBtn').style.opacity = '';
-    document.getElementById('genCodeBtn').style.cursor = '';
-    document.getElementById('unlockCloudSync').style.display = 'none';
-  };
-  document.getElementById('saveCloudSync').onclick = async ()=>{
-    const url = document.getElementById('cloudUrl').value.trim();
-    const code = document.getElementById('cloudCode').value.trim();
-    const enabled = document.getElementById('cloudEnabled').checked;
-    if(enabled && (!url || !code)){
-      alert('Enter both the Database URL and a Sync Code before enabling sync.');
-      return;
-    }
-    DATA.settings.cloudSync = { url, code, enabled, locked: !document.getElementById('cloudUrl').disabled ? false : true };
-    save();
-    if(enabled){
-      await initCloudSync();
-    } else {
-      setCloudStatus('Sync is off — data stays on this device only.');
-    }
-  };
-  document.getElementById('cloudSyncNow').onclick = async ()=>{
-    if(!cloudSyncConfigured()){
-      alert('Enter a Database URL and Sync Code, then click "Save & Connect" first.');
-      return;
-    }
-    setCloudStatus('Syncing…');
-    await pushToCloud();
-    alert('Pushed this device\'s data to the cloud.');
-  };
-  document.getElementById('saveSheetSync').onclick = async ()=>{
-    const url = document.getElementById('sheetUrl').value.trim();
-    const enabled = document.getElementById('sheetEnabled').checked;
-    if(enabled && !url){
-      alert('Paste your Apps Script Web App URL before enabling backup.');
-      return;
-    }
-    DATA.settings.sheetSync = { url, enabled };
-    save();
-    setSheetStatus(enabled ? 'Backup is on.' : 'Backup is off — data stays on this device only.');
-    if(enabled){
-      await pushToSheet();
-    }
-  };
-  document.getElementById('sheetBackupNow').onclick = async ()=>{
-    const url = document.getElementById('sheetUrl').value.trim();
-    if(!url){
-      alert('Paste your Apps Script Web App URL first, then click Save.');
-      return;
-    }
-    if(url !== (DATA.settings.sheetSync&&DATA.settings.sheetSync.url)){
-      alert('Click "Save" first so this URL is stored, then try Backup Now again.');
-      return;
-    }
-    setSheetStatus('Backing up…');
-    await pushToSheet();
-    alert('Backup pushed to your Google Sheet.');
-  };
-  document.getElementById('sheetRestoreNow').onclick = async ()=>{
-    if(!sheetSyncConfigured()){
-      alert('Enter your Apps Script Web App URL and click Save first.');
-      return;
-    }
-    if(!confirm('This will REPLACE all current data on this device with whatever is in the Google Sheet backup. Continue?')) return;
-    const ok = await restoreFromSheet();
-    if(ok) alert('Data restored from Google Sheet.');
-  };
-  document.getElementById('saveInvoiceSettings').onclick = ()=>{
-    const nextNumber = parseInt(document.getElementById('inv_s_next').value, 10);
-    const existing = DATA.settings.invoiceSettings || {};
-    DATA.settings.invoiceSettings = {
-      ...existing, // keeps logoImage/qrImage, which have their own upload controls below
-      businessName: document.getElementById('inv_s_name').value.trim() || 'Glownest Media',
-      phone: document.getElementById('inv_s_phone').value.trim(),
-      address: document.getElementById('inv_s_address').value.trim(),
-      gstin: document.getElementById('inv_s_gstin').value.trim(),
-      upi: document.getElementById('inv_s_upi').value.trim(),
-      bankDetails: document.getElementById('inv_s_bank').value,
-      prefix: document.getElementById('inv_s_prefix').value.trim() || 'INV',
-      nextNumber: (Number.isFinite(nextNumber) && nextNumber>0) ? nextNumber : 1,
-    };
-    save();
-    alert('Invoice details saved.');
-  };
-  function readImageFileToDataUrl(file){
-    return new Promise((resolve, reject)=>{
-      const reader = new FileReader();
-      reader.onload = ()=>resolve(reader.result);
-      reader.onerror = reject;
-      reader.readAsDataURL(file);
-    });
-  }
-  const logoFileInput = document.getElementById('inv_s_logo_file');
-  if(logoFileInput){
-    logoFileInput.onchange = async ()=>{
-      const file = logoFileInput.files && logoFileInput.files[0];
-      if(!file) return;
-      const dataUrl = await readImageFileToDataUrl(file);
-      DATA.settings.invoiceSettings = {...(DATA.settings.invoiceSettings||{}), logoImage: dataUrl};
-      save(); render();
-    };
-  }
-  const logoClearBtn = document.getElementById('inv_s_logo_clear');
-  if(logoClearBtn){
-    logoClearBtn.onclick = ()=>{
-      DATA.settings.invoiceSettings = {...(DATA.settings.invoiceSettings||{}), logoImage: ''};
-      save(); render();
-    };
-  }
-  const qrFileInput = document.getElementById('inv_s_qr_file');
-  if(qrFileInput){
-    qrFileInput.onchange = async ()=>{
-      const file = qrFileInput.files && qrFileInput.files[0];
-      if(!file) return;
-      const dataUrl = await readImageFileToDataUrl(file);
-      DATA.settings.invoiceSettings = {...(DATA.settings.invoiceSettings||{}), qrImage: dataUrl};
-      save(); render();
-    };
-  }
-  const qrClearBtn = document.getElementById('inv_s_qr_clear');
-  if(qrClearBtn){
-    qrClearBtn.onclick = ()=>{
-      DATA.settings.invoiceSettings = {...(DATA.settings.invoiceSettings||{}), qrImage: ''};
-      save(); render();
-    };
-  }
-  document.getElementById('addTypeBtn').onclick = ()=>{
-    const input = document.getElementById('newTypeInput');
-    const name = input.value.trim();
-    if(!name) return;
-    if(DATA.eventTypes.some(t=>t.toLowerCase()===name.toLowerCase())){
-      alert('That category already exists.');
-      return;
-    }
-    DATA.eventTypes.push(name);
-    save(); render();
-  };
-  document.getElementById('newTypeInput').addEventListener('keydown', e=>{
-    if(e.key==='Enter'){ e.preventDefault(); document.getElementById('addTypeBtn').click(); }
-  });
-  document.querySelectorAll('[data-del-type]').forEach(btn=>{
-    btn.onclick = ()=>{
-      const t = btn.dataset.delType;
-      if(confirm(`Remove category "${t}"? Events already using it will keep the label; it just won't be offered for new ones.`)){
-        DATA.eventTypes = DATA.eventTypes.filter(x=>x!==t);
-        save(); render();
-      }
-    };
-  });
-  document.getElementById('addPartnerBtn').onclick = ()=>{
-    const input = document.getElementById('newPartnerInput');
-    const pinInput = document.getElementById('newPartnerPin');
-    const name = input.value.trim();
-    const pin = pinInput.value.trim();
-    if(!name) return;
-    if(DATA.partners.some(p=>p.name.toLowerCase()===name.toLowerCase())){
-      alert('That partner already exists.');
-      return;
-    }
-    if(!/^\d{4}$/.test(pin)){
-      alert('Please set a 4-digit PIN (numbers only) for this partner.');
-      return;
-    }
-    DATA.partners.push({name, pin});
-    save(); render();
-  };
-  document.getElementById('newPartnerInput').addEventListener('keydown', e=>{
-    if(e.key==='Enter'){ e.preventDefault(); document.getElementById('newPartnerPin').focus(); }
-  });
-  document.getElementById('newPartnerPin').addEventListener('keydown', e=>{
-    if(e.key==='Enter'){ e.preventDefault(); document.getElementById('addPartnerBtn').click(); }
-  });
-  document.querySelectorAll('[data-del-partner]').forEach(btn=>{
-    btn.onclick = ()=>{
-      const p = btn.dataset.delPartner;
-      if(confirm(`Remove partner "${p}"? Investments already tagged to them will keep the label; it just won't be offered for new ones. If this partner is logged in on this device, they'll be logged out.`)){
-        DATA.partners = DATA.partners.filter(x=>x.name!==p);
-        save();
-        if(getCurrentUser()===p) setCurrentUser(null);
-        render();
-      }
-    };
-  });
-  document.querySelectorAll('[data-set-pin]').forEach(btn=>{
-    btn.onclick = ()=>{
-      const name = btn.dataset.setPin;
-      const p = partnerByName(name);
-      if(!p) return;
-      const pin = prompt(`Set a 4-digit PIN for ${name}:`);
-      if(pin===null) return;
-      const trimmed = pin.trim();
-      if(!/^\d{4}$/.test(trimmed)){
-        alert('PIN must be exactly 4 digits.');
-        return;
-      }
-      p.pin = trimmed;
-      save(); render();
-      alert(`PIN set for ${name}.`);
-    };
-  });
-  document.getElementById('saveYtKey').onclick = ()=>{
-    DATA.settings = DATA.settings || {};
-    DATA.settings.youtubeApiKey = document.getElementById('ytApiKey').value.trim();
-    save();
-    alert('Saved. New event fetches will use this key.');
-  };
-  document.getElementById('exportBackup').onclick = ()=>{
-    const blob = new Blob([JSON.stringify(DATA,null,2)], {type:'application/json'});
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = 'glownest_media_backup_' + todayStr() + '.json';
-    document.body.appendChild(a); a.click(); document.body.removeChild(a);
-  };
-  document.getElementById('importFile').onchange = (e)=>{
-    const file = e.target.files[0];
-    if(!file) return;
-    const reader = new FileReader();
-    reader.onload = ()=>{
-      try{
-        const parsed = JSON.parse(reader.result);
-        if(!confirm('This will REPLACE all current data with the backup file. Continue?')) return;
-        DATA = normalizeData(parsed);
-        save(); render();
-        alert('Backup restored successfully.');
-      }catch(err){
-        alert('Could not read this file. Make sure it is a valid Glownest Media backup JSON.');
-      }
-    };
-    reader.readAsText(file);
-  };
-  document.getElementById('wipeData').onclick = ()=>{
-    if(confirm('This will permanently erase ALL data in this app. This cannot be undone. Continue?')){
-      if(confirm('Are you absolutely sure? Consider exporting a backup first.')){
-        DATA = blankData();
-        save(); render();
-      }
-    }
-  };
-}
-
-// ---------- Init ----------
-render();
-if(DATA.settings.cloudSync && DATA.settings.cloudSync.enabled){
-  setCloudStatus('☁ Checking sync…');
-}
-initCloudSync();
-</script>
-</body>
-</html>
+  const {inc, exp, s
