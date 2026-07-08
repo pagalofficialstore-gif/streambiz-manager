@@ -3554,9 +3554,12 @@ async function exportReportPdf(){
 // an expense went towards (not just what the transaction was).
 function withEventTag(text, eventId){
   if(!eventId) return text;
-  const name = eventName(eventId);
-  if(!name || name==='—') return text;
-  return text + ' — ' + name;
+  const ev = DATA.events.find(x=>x.id===eventId);
+  if(!ev) return text;
+  let tag = ev.name || '';
+  if(ev.location) tag += (tag?' — ':'') + ev.location;
+  if(!tag) return text;
+  return text + ' — ' + tag;
 }
 function cashAtBankTransactions(){
   const rows = [];
