@@ -141,6 +141,8 @@
   .hero .h-sub{display:flex;gap:26px;margin-top:20px;position:relative;flex-wrap:wrap;}
   .hero .h-sub .s-lbl{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;opacity:.8;}
   .hero .h-sub .s-val{font-size:19px;font-weight:700;margin-top:3px;font-variant-numeric:tabular-nums;}
+  .hero .h-sub .mini-bar{width:78px;height:6px;border-radius:3px;background:rgba(255,255,255,.25);margin-top:7px;overflow:hidden;}
+  .hero .h-sub .mini-fill{height:100%;background:#fff;border-radius:3px;}
   .side-stack{display:flex;flex-direction:column;gap:14px;}
   .side-stack .card{flex:1;display:flex;flex-direction:column;justify-content:center;}
 
@@ -1833,6 +1835,11 @@ function viewDashboard(){
           <div><div class="s-lbl">Net Profit · all time</div><div class="s-val">${fmt(net)}</div></div>
           <div><div class="s-lbl">Investment Value</div><div class="s-val">${fmt(invCost)}</div></div>
           <div><div class="s-lbl">Events Logged</div><div class="s-val">${DATA.events.length}</div></div>
+          <div>
+            <div class="s-lbl">Monthly Target</div>
+            <div class="s-val">${monthEventsCount}/${monthEventTarget}</div>
+            <div class="mini-bar"><div class="mini-fill" style="width:${monthEventPct}%;"></div></div>
+          </div>
         </div>
       </div>
       <div class="side-stack">
