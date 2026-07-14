@@ -1839,6 +1839,7 @@ function viewDashboard(){
             <div class="s-lbl">Monthly Target</div>
             <div class="s-val">${monthEventsCount}/${monthEventTarget}</div>
             <div class="mini-bar"><div class="mini-fill" style="width:${monthEventPct}%;"></div></div>
+            <a href="#" id="editMonthTargetLink" style="color:rgba(255,255,255,.75);font-size:10.5px;display:inline-block;margin-top:4px;">Change target</a>
           </div>
         </div>
       </div>
@@ -1852,27 +1853,6 @@ function viewDashboard(){
       <div class="card"><div class="label-row"><div class="label">This Month Income</div>${deltaChip(monthIncome, lmIncome)}</div><div class="value pos">${fmt(monthIncome)}</div></div>
       <div class="card"><div class="label-row"><div class="label">This Month Expenses</div>${deltaChip(monthExpense+monthSalary, lmExpense)}</div><div class="value neg">${fmt(monthExpense+monthSalary)}</div></div>
       <div class="card"><div class="label-row"><div class="label">This Month Net</div>${deltaChip(monthNet, lmNet)}</div><div class="value ${monthNet>=0?'pos':'neg'}">${fmt(monthNet)}</div></div>
-    </div>
-
-    <div class="panel">
-      <div class="panel-head">
-        <h2>Monthly Event Target</h2>
-        <span class="note" style="margin:0">${monthLabel(thisMonthKey)} · updates automatically as events are logged</span>
-      </div>
-      <div style="display:flex;align-items:baseline;gap:10px;margin-bottom:10px;">
-        <div style="font-size:28px;font-weight:700;">${monthEventsCount} / ${monthEventTarget}</div>
-        <div style="color:var(--muted);font-size:13.5px;">events booked this month</div>
-        <span class="pill ${onTrack?'income':'pending'}" style="margin-left:auto;">${monthEventsCount>=monthEventTarget?'🎯 Target reached':(onTrack?'On track':'Behind pace')}</span>
-      </div>
-      <div class="stat-bar-track" style="height:14px;">
-        <div class="stat-bar-fill" style="width:${monthEventPct}%;background:${monthEventsCount>=monthEventTarget?'var(--pos)':'var(--accent)'};"></div>
-      </div>
-      <div class="note" style="margin-top:8px;">
-        ${monthEventsCount>=monthEventTarget
-          ? `Target met — ${monthEventsCount-monthEventTarget>0?(monthEventsCount-monthEventTarget)+' extra booked.':'nice work.'}`
-          : `${monthEventRemaining} more event${monthEventRemaining===1?'':'s'} needed to hit this month's target.`}
-        <a href="#" id="editMonthTargetLink" style="color:var(--muted);margin-left:8px;">Change target</a>
-      </div>
     </div>
 
     <div class="panel">
@@ -4340,3 +4320,4 @@ initCloudSync();
 </script>
 </body>
 </html>
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            
