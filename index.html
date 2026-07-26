@@ -2320,6 +2320,34 @@ function bookingEffectiveTimes(b){
   return BOOKING_TIME_SLOT_DEFAULTS[b.timeSlot] || {start:'09:00', end:'10:00'};
 }
 function bookingSortKey(b){ return (b.date||'') + ' ' + bookingEffectiveTimes(b).start; }
+// Builds a wa.me link with a pre-filled draft message for a confirmed booking.
+// Nothing is sent automatically — it just opens WhatsApp (app or web) with the
+// message already typed in, so you review it and hit send yourself.
+function bookingWhatsappDigits(phone){
+  let digits = String(phone||'').replace(/[^\d]/g,'');
+  if(!digits) return '';
+  // Assume Indian numbers by default when no country code is present.
+  if(digits.length===10) digits = '91' + digits;
+  return digits;
+}
+function bookingWhatsappMessage(b){
+  const biz = (DATA.settings.invoiceSettings && DATA.settings.invoiceSettings.businessName) || 'us';
+  const lines = [
+    `Hi ${b.customerName||'there'}, this is ${biz}.`,
+    `Your booking is confirmed:`,
+    `• Event: ${b.title||''}`,
+    `• Date: ${formatDateDMY(b.date)}${b.timeSlot?` (${b.timeSlot})`:''}`,
+  ];
+  if(b.location) lines.push(`• Location: ${b.location}`);
+  if(b.quotationAmount) lines.push(`• Amount: ₹${plainNum(b.quotationAmount)}`);
+  lines.push('', 'Looking forward to it! Let us know if anything changes.');
+  return lines.join('\n');
+}
+function bookingWhatsappLink(b){
+  const digits = bookingWhatsappDigits(b.customerPhone);
+  const text = encodeURIComponent(bookingWhatsappMessage(b));
+  return digits ? `https://wa.me/${digits}?text=${text}` : `https://wa.me/?text=${text}`;
+}
 function viewBookings(){
   const all = DATA.bookings.slice().sort((a,b)=>bookingSortKey(a).localeCompare(bookingSortKey(b)));
   const today = todayStr();
@@ -2351,6 +2379,7 @@ function viewBookings(){
         <td>${b.quotationAmount?fmt(Number(b.quotationAmount)):'—'}</td>
         <td>${syncPill}</td>
         <td class="row-actions">
+          ${b.status==='Confirmed'&&b.customerPhone?`<button class="btn small" data-whatsapp="${b.id}">💬 WhatsApp</button>`:''}
           <button class="btn small secondary" data-bedit="${b.id}">Edit</button>
           <button class="btn danger" data-bdel="${b.id}">Delete</button>
         </td>
@@ -2429,6 +2458,13 @@ function wireBookings(){
       DATA.bookings = DATA.bookings.filter(b=>b.id!==btn.dataset.bdel);
       save(); render();
       await syncBookingToCalendar(bk, 'delete');
+    };
+  });
+  document.querySelectorAll('[data-whatsapp]').forEach(btn=>{
+    btn.onclick = ()=>{
+      const bk = DATA.bookings.find(b=>b.id===btn.dataset.whatsapp);
+      if(!bk) return;
+      window.open(bookingWhatsappLink(bk), '_blank', 'noopener');
     };
   });
 }
