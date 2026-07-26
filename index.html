@@ -299,6 +299,7 @@
     <nav class="nav">
       <div class="nav-item active" data-tab="dashboard"><svg class="nav-ic" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"></rect><rect x="14" y="3" width="7" height="7" rx="1.5"></rect><rect x="14" y="14" width="7" height="7" rx="1.5"></rect><rect x="3" y="14" width="7" height="7" rx="1.5"></rect></svg><span class="label-text">Dashboard</span><span class="label-short">Home</span></div>
       <div class="nav-item" data-tab="events"><svg class="nav-ic" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"></rect><path d="M7 4v16M17 4v16M3 9h4M3 15h4M17 9h4M17 15h4"></path></svg><span class="label-text">Events</span><span class="label-short">Events</span></div>
+      <div class="nav-item" data-tab="bookings"><svg class="nav-ic" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"></rect><path d="M3 10h18M8 3v4M16 3v4"></path><path d="M8 14h2M8 17h2M14 14h2M14 17h2"></path></svg><span class="label-text">Bookings</span><span class="label-short">Book</span></div>
       <div class="nav-item" data-tab="income"><svg class="nav-ic" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 17 9 11 13 15 21 7"></polyline><polyline points="15 7 21 7 21 13"></polyline></svg><span class="label-text">Income</span><span class="label-short">Income</span></div>
       <div class="nav-item" data-tab="expenses"><svg class="nav-ic" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 3h14v18l-3-1.6-2 1.6-2-1.6-2 1.6L5 21V3z"></path><path d="M8.5 8h7M8.5 12h7M8.5 16h4"></path></svg><span class="label-text">Expenses</span><span class="label-short">Costs</span><span id="expenseNavBadge" class="nav-badge" style="display:none;"></span></div>
       <div class="nav-item" data-tab="investments"><svg class="nav-ic" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8l9-5 9 5v8l-9 5-9-5V8z"></path><path d="M3 8l9 5 9-5M12 13v8"></path></svg><span class="label-text">Investments</span><span class="label-short">Assets</span><span id="investmentNavBadge" class="nav-badge" style="display:none;"></span></div>
@@ -400,6 +401,10 @@ const DEFAULT_CLOUD_SYNC = {
   locked: true,
 };
 const DEFAULT_SHEET_SYNC = { url: '', enabled: false };
+// Bookings are internal-only date holds (not customer-facing) that
+// optionally push one-way to Google Calendar via the same Apps Script
+// Web App already used for the Sheets backup — no separate setup needed.
+const DEFAULT_CALENDAR_SYNC = { enabled: false };
 // Business/payment details printed on every generated invoice — filled in
 // once via Settings and reused every time. All optional except businessName;
 // blank fields are simply omitted from the printed invoice. Note: generated
@@ -416,8 +421,8 @@ const DEFAULT_INVOICE_SETTINGS = {
 };
 function blankData(){
   return {
-    events:[], income:[], expenses:[], investments:[], staff:[], salaryPayments:[], recurringExpenses:[],
-    settings:{youtubeApiKey:'', monthlyEventTarget:5, cloudSync:{...DEFAULT_CLOUD_SYNC}, sheetSync:{...DEFAULT_SHEET_SYNC}, invoiceSettings:{...DEFAULT_INVOICE_SETTINGS}},
+    events:[], income:[], expenses:[], investments:[], staff:[], salaryPayments:[], recurringExpenses:[], bookings:[],
+    settings:{youtubeApiKey:'', monthlyEventTarget:5, cloudSync:{...DEFAULT_CLOUD_SYNC}, sheetSync:{...DEFAULT_SHEET_SYNC}, calendarSync:{...DEFAULT_CALENDAR_SYNC}, invoiceSettings:{...DEFAULT_INVOICE_SETTINGS}},
     eventTypes:[], partners:[], updatedAt: null,
   };
 }
@@ -430,12 +435,14 @@ function normalizeData(d){
   d.events ||= []; d.income ||= []; d.expenses ||= [];
   d.investments ||= []; d.staff ||= []; d.salaryPayments ||= [];
   d.recurringExpenses ||= [];
+  d.bookings ||= [];
   d.settings ||= {}; d.settings.youtubeApiKey ||= '';
   d.settings.monthlyEventTarget ||= 5;
   if(!d.settings.cloudSync || !d.settings.cloudSync.url){
     d.settings.cloudSync = {...DEFAULT_CLOUD_SYNC};
   }
   d.settings.sheetSync ||= {...DEFAULT_SHEET_SYNC};
+  d.settings.calendarSync ||= {...DEFAULT_CALENDAR_SYNC};
   // Merge (not replace) so previously-saved invoice settings keep their
   // values while any newly-added fields (upi, logoImage, qrImage, etc.)
   // get safely backfilled instead of ending up undefined.
@@ -683,6 +690,65 @@ async function restoreFromSheet(){
   }catch(e){
     setSheetStatus('Restore failed. (' + (e.message||'network error') + ')');
     alert('Could not reach the Google Sheet. Check the URL and your internet connection.');
+    return false;
+  }
+}
+
+// ============================================================
+// BOOKING → GOOGLE CALENDAR SYNC (optional, one-way, internal-only) —
+// Bookings are just date holds so nothing gets double-booked; they have
+// nothing to do with income/expenses. Sync reuses the SAME Apps Script Web
+// App URL already configured above for the Sheets backup (one connection,
+// two jobs) — the script tells create/update/delete apart via the "op"
+// field and creates the event on the account's default Google Calendar.
+// Nothing here is shown to customers; it's purely for your own visibility.
+// ============================================================
+function calendarSyncConfigured(){
+  return !!(DATA.settings && DATA.settings.sheetSync && DATA.settings.sheetSync.url);
+}
+function calendarSyncEnabled(){
+  return !!(DATA.settings && DATA.settings.calendarSync && DATA.settings.calendarSync.enabled);
+}
+async function syncBookingToCalendar(booking, op){
+  if(!calendarSyncEnabled() || !calendarSyncConfigured()) return false;
+  try{
+    const times = bookingEffectiveTimes(booking);
+    const res = await fetchWithTimeout(DATA.settings.sheetSync.url, 15000, {
+      method:'POST',
+      headers:{'Content-Type':'text/plain;charset=utf-8'},
+      body: JSON.stringify({
+        action:'booking',
+        op,
+        calendarEventId: booking.calendarEventId || null,
+        booking:{
+          title: booking.title,
+          customerName: booking.customerName,
+          customerPhone: booking.customerPhone,
+          date: booking.date,
+          timeSlot: booking.timeSlot,
+          startTime: times.start,
+          endTime: times.end,
+          location: booking.location,
+          quotationAmount: booking.quotationAmount,
+          status: booking.status,
+          notes: booking.notes,
+        },
+      }),
+    });
+    if(!res.ok) throw new Error('HTTP ' + res.status);
+    const json = await res.json();
+    if(!json || !json.ok) throw new Error((json&&json.error)||'Unknown error');
+    if(op==='delete'){
+      booking.calendarEventId = null;
+    } else if(json.calendarEventId){
+      booking.calendarEventId = json.calendarEventId;
+    }
+    booking.calendarSyncStatus = 'synced';
+    booking.calendarSyncedAt = Date.now();
+    return true;
+  }catch(e){
+    booking.calendarSyncStatus = 'failed';
+    console.warn('Calendar sync failed', e);
     return false;
   }
 }
@@ -1319,6 +1385,7 @@ function render(){
   switch(currentTab){
     case 'dashboard': main.innerHTML = viewDashboard(); wireDashboard(); break;
     case 'events': main.innerHTML = viewEvents(); wireEvents(); break;
+    case 'bookings': main.innerHTML = viewBookings(); wireBookings(); break;
     case 'income': main.innerHTML = viewIncome(); wireIncome(); break;
     case 'expenses': main.innerHTML = viewExpenses(); wireExpenses(); break;
     case 'investments': main.innerHTML = viewInvestments(); wireInvestments(); break;
@@ -2227,6 +2294,166 @@ function bindEventForm(ev){
       DATA.events.push(rec);
     }
     save(); closeModal(); render();
+  };
+}
+
+// ============================================================
+// BOOKINGS — internal-only date holds so nothing gets double-booked.
+// These are NOT customer-facing and have nothing to do with income or
+// expenses; they exist purely so you can glance at a calendar view of
+// what's coming up. Optionally pushes one-way to Google Calendar (see
+// syncBookingToCalendar above).
+// ============================================================
+const BOOKING_TIME_SLOTS = ['Morning','Afternoon','Evening','Night','Full Day'];
+// Sensible default start/end times per time-of-day category, used to give
+// the Google Calendar event a real duration when no exact time is entered.
+const BOOKING_TIME_SLOT_DEFAULTS = {
+  'Morning':   {start:'09:00', end:'12:00'},
+  'Afternoon': {start:'12:00', end:'17:00'},
+  'Evening':   {start:'17:00', end:'20:00'},
+  'Night':     {start:'20:00', end:'23:00'},
+  'Full Day':  {start:'09:00', end:'21:00'},
+};
+const BOOKING_STATUSES = ['Query','Confirmed'];
+function bookingEffectiveTimes(b){
+  return BOOKING_TIME_SLOT_DEFAULTS[b.timeSlot] || {start:'09:00', end:'10:00'};
+}
+function bookingSortKey(b){ return (b.date||'') + ' ' + bookingEffectiveTimes(b).start; }
+function viewBookings(){
+  const all = DATA.bookings.slice().sort((a,b)=>bookingSortKey(a).localeCompare(bookingSortKey(b)));
+  const today = todayStr();
+  const upcoming = all.filter(b=>(b.date||'') >= today);
+  const past = all.filter(b=>(b.date||'') < today).reverse();
+  const syncOn = calendarSyncEnabled() && calendarSyncConfigured();
+
+  const rowHtml = (b, isPast)=>{
+    let syncPill = '';
+    if(syncOn){
+      if(b.calendarEventId) syncPill = `<span class="pill income">📅 Synced</span>`;
+      else if(b.calendarSyncStatus==='failed') syncPill = `<span class="pill pending">⚠ Sync failed</span>`;
+      else syncPill = `<span class="pill pending">Not synced yet</span>`;
+    }
+    const statusPill = b.status==='Confirmed'
+      ? `<span class="pill income">Confirmed</span>`
+      : `<span class="pill pending">Query</span>`;
+    return `
+      <tr style="${isPast?'opacity:.55;':''}">
+        <td>${b.date||''}</td>
+        <td>${escapeHtml(b.timeSlot||'')}</td>
+        <td>
+          <div>${escapeHtml(b.title||'')}</div>
+          ${b.customerName?`<div class="note" style="margin-top:2px;">👤 ${escapeHtml(b.customerName)}${b.customerPhone?` · ${escapeHtml(b.customerPhone)}`:''}</div>`:''}
+          ${b.location?`<div class="note" style="margin-top:2px;">📍 ${escapeHtml(b.location)}</div>`:''}
+          ${b.notes?`<div class="note" style="margin-top:2px;">${escapeHtml(b.notes)}</div>`:''}
+        </td>
+        <td>${statusPill}</td>
+        <td>${b.quotationAmount?fmt(Number(b.quotationAmount)):'—'}</td>
+        <td>${syncPill}</td>
+        <td class="row-actions">
+          <button class="btn small secondary" data-bedit="${b.id}">Edit</button>
+          <button class="btn danger" data-bdel="${b.id}">Delete</button>
+        </td>
+      </tr>`;
+  };
+  const headerRow = `<tr><th>Date</th><th>Time</th><th>Booking</th><th>Status</th><th>Quotation</th><th></th><th></th></tr>`;
+
+  return `
+    <h1>Bookings</h1>
+    <div class="subtitle">Hold a date so you never double-book — internal only, not shown to customers.</div>
+    <div class="toolbar">
+      <div class="note">${syncOn ? 'Syncing one-way to your Google Calendar.' : 'Google Calendar sync is off — turn it on in Backup / Settings.'}</div>
+      <button class="btn" id="addBookingBtn">+ Add Booking</button>
+    </div>
+    <div class="panel">
+      <div class="panel-head"><h2>Upcoming</h2></div>
+      ${upcoming.length===0 ? '<div class="empty">No upcoming bookings. Click "Add Booking" to hold a date.</div>' : `
+      <table>
+        ${headerRow}
+        ${upcoming.map(b=>rowHtml(b,false)).join('')}
+      </table>`}
+    </div>
+    ${past.length ? `
+    <div class="panel">
+      <div class="panel-head"><h2>Past</h2></div>
+      <table>
+        ${headerRow}
+        ${past.map(b=>rowHtml(b,true)).join('')}
+      </table>
+    </div>` : ''}
+  `;
+}
+function bookingFormHtml(bk){
+  bk = bk || {id:null,title:'',customerName:'',customerPhone:'',date:todayStr(),timeSlot:'Afternoon',location:'',quotationAmount:'',status:'Query',notes:''};
+  return `
+    <h3>${bk.id?'Edit Booking':'Add Booking'}</h3>
+    <div class="form-grid">
+      <div><label>Title</label><input id="f_b_title" value="${escapeHtml(bk.title)}" placeholder="e.g. Rao Engagement — hold"></div>
+      <div><label>Customer Name</label><input id="f_b_customer" value="${escapeHtml(bk.customerName||'')}" placeholder="e.g. Priya Rao"></div>
+      <div><label>Customer Contact Number</label><input id="f_b_phone" type="tel" value="${escapeHtml(bk.customerPhone||'')}" placeholder="e.g. 98765 43210"></div>
+      <div><label>Date</label><input id="f_b_date" type="date" value="${bk.date}"></div>
+      <div><label>Time of Day</label>
+        <select id="f_b_timeslot">${BOOKING_TIME_SLOTS.map(t=>`<option value="${t}" ${bk.timeSlot===t?'selected':''}>${t}</option>`).join('')}</select>
+      </div>
+      <div><label>Event Location</label><input id="f_b_location" value="${escapeHtml(bk.location||'')}" placeholder="e.g. St. Mary's Church, Mumbai"></div>
+      <div><label>Quotation / Amount Charged</label><input id="f_b_quote" type="number" step="0.01" value="${escapeHtml(String(bk.quotationAmount||''))}" placeholder="e.g. 25000"></div>
+      <div><label>Status</label>
+        <select id="f_b_status">${BOOKING_STATUSES.map(s=>`<option value="${s}" ${bk.status===s?'selected':''}>${s}</option>`).join('')}</select>
+      </div>
+    </div>
+    <label>Notes</label>
+    <textarea id="f_b_notes" placeholder="Other details...">${escapeHtml(bk.notes||'')}</textarea>
+    <div style="margin-top:16px;display:flex;gap:10px;justify-content:flex-end;">
+      <button class="btn secondary" id="cancelBtn">Cancel</button>
+      <button class="btn" id="saveBtn">Save</button>
+    </div>
+  `;
+}
+function wireBookings(){
+  document.getElementById('addBookingBtn').onclick = ()=>{
+    openModal(bookingFormHtml(null));
+    bindBookingForm(null);
+  };
+  document.querySelectorAll('[data-bedit]').forEach(btn=>{
+    btn.onclick = ()=>{
+      const bk = DATA.bookings.find(b=>b.id===btn.dataset.bedit);
+      openModal(bookingFormHtml(bk));
+      bindBookingForm(bk);
+    };
+  });
+  document.querySelectorAll('[data-bdel]').forEach(btn=>{
+    btn.onclick = async ()=>{
+      const bk = DATA.bookings.find(b=>b.id===btn.dataset.bdel);
+      if(!bk) return;
+      if(!confirm('Delete this booking? If it was synced, it will also be removed from Google Calendar.')) return;
+      DATA.bookings = DATA.bookings.filter(b=>b.id!==btn.dataset.bdel);
+      save(); render();
+      await syncBookingToCalendar(bk, 'delete');
+    };
+  });
+}
+function bindBookingForm(bk){
+  document.getElementById('cancelBtn').onclick = closeModal;
+  document.getElementById('saveBtn').onclick = async ()=>{
+    const title = document.getElementById('f_b_title').value.trim();
+    const date = document.getElementById('f_b_date').value;
+    if(!title || !date){ alert('Please enter at least a title and date.'); return; }
+    const isNew = !bk;
+    const rec = bk || {id:uid(), calendarEventId:null};
+    rec.title = title;
+    rec.customerName = document.getElementById('f_b_customer').value.trim();
+    rec.customerPhone = document.getElementById('f_b_phone').value.trim();
+    rec.date = date;
+    rec.timeSlot = document.getElementById('f_b_timeslot').value;
+    rec.location = document.getElementById('f_b_location').value.trim();
+    const quoteVal = document.getElementById('f_b_quote').value;
+    rec.quotationAmount = quoteVal ? Number(quoteVal) : '';
+    rec.status = document.getElementById('f_b_status').value;
+    rec.notes = document.getElementById('f_b_notes').value.trim();
+    if(isNew) DATA.bookings.push(rec);
+    save(); closeModal(); render();
+    await syncBookingToCalendar(rec, isNew?'create':'update');
+    save();
+    if(currentTab==='bookings') render();
   };
 }
 
@@ -3919,6 +4146,22 @@ function viewSettings(){
       <div class="note" id="sheetSyncStatus" style="margin-top:8px;">${DATA.settings.sheetSync&&DATA.settings.sheetSync.enabled ? 'Backup is on.' : 'Backup is off — set up the Web App URL above and enable it.'}</div>
     </div>
     <div class="panel">
+      <h2>Bookings → Google Calendar Sync</h2>
+      <p style="color:var(--muted);font-size:13.5px;">
+        Reuses the same Apps Script Web App URL above — nothing new to set up. When it's on, every booking you add,
+        edit, or delete on the Bookings page pushes automatically to your default Google Calendar, so you always see
+        held dates at a glance. This is for your own visibility only — nothing here is ever customer-facing.
+      </p>
+      <div style="margin-top:10px;display:flex;align-items:center;gap:8px;">
+        <input type="checkbox" id="calendarSyncEnabled" ${calendarSyncEnabled()?'checked':''} style="width:auto;">
+        <label for="calendarSyncEnabled" style="margin:0;">Sync bookings to Google Calendar</label>
+      </div>
+      <div class="backup-box" style="margin-top:12px;">
+        <button class="btn" id="saveCalendarSync">Save</button>
+      </div>
+      <div class="note" id="calendarSyncStatus" style="margin-top:8px;">${calendarSyncEnabled() ? 'Calendar sync is on.' : 'Calendar sync is off.'}</div>
+    </div>
+    <div class="panel">
       <h2>Invoice Details</h2>
       <p style="color:var(--muted);font-size:13.5px;">
         These details print on every invoice you generate from an event's "🧾 Invoice" button. Leave anything
@@ -4126,6 +4369,18 @@ function wireSettings(){
     if(!confirm('This will REPLACE all current data on this device with whatever is in the Google Sheet backup. Continue?')) return;
     const ok = await restoreFromSheet();
     if(ok) alert('Data restored from Google Sheet.');
+  };
+  document.getElementById('saveCalendarSync').onclick = ()=>{
+    const enabled = document.getElementById('calendarSyncEnabled').checked;
+    if(enabled && !calendarSyncConfigured()){
+      alert('Paste your Apps Script Web App URL above (Google Sheets Backup section) and click Save there first — Calendar sync reuses that same connection.');
+      return;
+    }
+    DATA.settings.calendarSync = { enabled };
+    save();
+    const statusEl = document.getElementById('calendarSyncStatus');
+    if(statusEl) statusEl.textContent = enabled ? 'Calendar sync is on.' : 'Calendar sync is off.';
+    alert('Calendar sync setting saved.');
   };
   document.getElementById('saveInvoiceSettings').onclick = ()=>{
     const nextNumber = parseInt(document.getElementById('inv_s_next').value, 10);
