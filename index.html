@@ -2332,15 +2332,19 @@ function bookingWhatsappDigits(phone){
 }
 function bookingWhatsappMessage(b){
   const biz = (DATA.settings.invoiceSettings && DATA.settings.invoiceSettings.businessName) || 'us';
+  const isConfirmed = b.status==='Confirmed';
   const lines = [
     `Hi ${b.customerName||'there'}, this is ${biz}.`,
-    `Your booking is confirmed:`,
+    isConfirmed ? `Your booking is confirmed:` : `Following up on your enquiry:`,
     `• Event: ${b.title||''}`,
     `• Date: ${formatDateDMY(b.date)}${b.timeSlot?` (${b.timeSlot})`:''}`,
   ];
   if(b.location) lines.push(`• Location: ${b.location}`);
-  if(b.quotationAmount) lines.push(`• Amount: ₹${plainNum(b.quotationAmount)}`);
-  lines.push('', 'Looking forward to it! Let us know if anything changes.');
+  if(b.quotationAmount) lines.push(`• Quotation: ₹${plainNum(b.quotationAmount)}`);
+  lines.push('');
+  lines.push(isConfirmed
+    ? 'Looking forward to it! Let us know if anything changes.'
+    : 'Let us know if you\'d like to go ahead and confirm this booking, or if you have any questions about the quotation.');
   return lines.join('\n');
 }
 function bookingWhatsappLink(b){
@@ -2379,7 +2383,7 @@ function viewBookings(){
         <td>${b.quotationAmount?fmt(Number(b.quotationAmount)):'—'}</td>
         <td>${syncPill}</td>
         <td class="row-actions">
-          ${b.status==='Confirmed'&&b.customerPhone?`<button class="btn small" data-whatsapp="${b.id}">💬 WhatsApp</button>`:''}
+          ${b.customerPhone?`<button class="btn small" data-whatsapp="${b.id}">💬 WhatsApp</button>`:''}
           <button class="btn small secondary" data-bedit="${b.id}">Edit</button>
           <button class="btn danger" data-bdel="${b.id}">Delete</button>
         </td>
