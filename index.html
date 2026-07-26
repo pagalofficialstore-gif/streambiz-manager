@@ -2418,11 +2418,13 @@ function viewBookings(){
   `;
 }
 function bookingFormHtml(bk){
-  bk = bk || {id:null,title:'',customerName:'',customerPhone:'',date:todayStr(),timeSlot:'Afternoon',location:'',quotationAmount:'',status:'Query',notes:''};
+  bk = bk || {id:null,title:DATA.eventTypes[0]||'',customerName:'',customerPhone:'',date:todayStr(),timeSlot:'Afternoon',location:'',quotationAmount:'',status:'Query',notes:''};
   return `
     <h3>${bk.id?'Edit Booking':'Add Booking'}</h3>
     <div class="form-grid">
-      <div><label>Title</label><input id="f_b_title" value="${escapeHtml(bk.title)}" placeholder="e.g. Rao Engagement — hold"></div>
+      <div><label>Category</label>
+        <select id="f_b_title">${eventTypeOptionsHtml(bk.title)}</select>
+      </div>
       <div><label>Customer Name</label><input id="f_b_customer" value="${escapeHtml(bk.customerName||'')}" placeholder="e.g. Priya Rao"></div>
       <div><label>Customer Contact Number</label><input id="f_b_phone" type="tel" value="${escapeHtml(bk.customerPhone||'')}" placeholder="e.g. 98765 43210"></div>
       <div><label>Date</label><input id="f_b_date" type="date" value="${bk.date}"></div>
@@ -2486,10 +2488,33 @@ function wireBookings(){
 }
 function bindBookingForm(bk){
   document.getElementById('cancelBtn').onclick = closeModal;
+
+  const titleSelect = document.getElementById('f_b_title');
+  let lastTitleValue = titleSelect.value;
+  titleSelect.addEventListener('change', ()=>{
+    if(titleSelect.value === '__add_new__'){
+      const name = prompt('New category name:');
+      const trimmed = (name||'').trim();
+      if(trimmed){
+        if(!DATA.eventTypes.some(t=>t.toLowerCase()===trimmed.toLowerCase())){
+          DATA.eventTypes.push(trimmed);
+          save();
+        }
+        titleSelect.innerHTML = eventTypeOptionsHtml(trimmed);
+        titleSelect.value = trimmed;
+        lastTitleValue = trimmed;
+      } else {
+        titleSelect.value = lastTitleValue;
+      }
+    } else {
+      lastTitleValue = titleSelect.value;
+    }
+  });
+
   document.getElementById('saveBtn').onclick = async ()=>{
     const title = document.getElementById('f_b_title').value.trim();
     const date = document.getElementById('f_b_date').value;
-    if(!title || !date){ alert('Please enter at least a title and date.'); return; }
+    if(!title || !date){ alert('Please choose a category and date.'); return; }
     const isNew = !bk;
     const rec = bk || {id:uid(), calendarEventId:null};
     rec.title = title;
