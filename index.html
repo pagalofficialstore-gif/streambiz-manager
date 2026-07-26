@@ -423,7 +423,7 @@ const DEFAULT_INVOICE_SETTINGS = {
 };
 function blankData(){
   return {
-    events:[], income:[], expenses:[], investments:[], staff:[], salaryPayments:[], recurringExpenses:[], bookings:[], canvaEdits:[],
+    events:[], income:[], expenses:[], investments:[], staff:[], salaryPayments:[], recurringExpenses:[], bookings:[], canvaClients:[],
     settings:{youtubeApiKey:'', monthlyEventTarget:5, cloudSync:{...DEFAULT_CLOUD_SYNC}, sheetSync:{...DEFAULT_SHEET_SYNC}, calendarSync:{...DEFAULT_CALENDAR_SYNC}, invoiceSettings:{...DEFAULT_INVOICE_SETTINGS}},
     eventTypes:[], partners:[], updatedAt: null,
   };
@@ -438,7 +438,16 @@ function normalizeData(d){
   d.investments ||= []; d.staff ||= []; d.salaryPayments ||= [];
   d.recurringExpenses ||= [];
   d.bookings ||= [];
-  d.canvaEdits ||= [];
+  d.canvaClients ||= [];
+  // Earlier build of this feature stored posters as one flat list. Migrate
+  // any of those into a single "General" client so nothing gets lost.
+  if(d.canvaEdits && d.canvaEdits.length && !d.canvaClients.length){
+    d.canvaClients.push({
+      id: uid(), name: 'General', logo: '',
+      links: d.canvaEdits.map(c=>({id:c.id||uid(), name:c.title||'', url:c.link||''})),
+    });
+  }
+  delete d.canvaEdits;
   d.settings ||= {}; d.settings.youtubeApiKey ||= '';
   d.settings.monthlyEventTarget ||= 5;
   if(!d.settings.cloudSync || !d.settings.cloudSync.url){
@@ -2539,48 +2548,96 @@ function bindBookingForm(bk){
 }
 
 // ============================================================
-// CANVA EDITS
+// CANVA EDITS (organized by client — each client can hold many links)
 // ============================================================
+function fileToDataUrl(file){
+  return new Promise((resolve, reject)=>{
+    const reader = new FileReader();
+    reader.onload = ()=>resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+function clientLogoHtml(cl, size){
+  size = size || 40;
+  return cl.logo
+    ? `<img src="${cl.logo}" style="width:${size}px;height:${size}px;border-radius:8px;object-fit:cover;flex:0 0 auto;">`
+    : `<div style="width:${size}px;height:${size}px;border-radius:8px;background:var(--border);display:flex;align-items:center;justify-content:center;font-weight:600;flex:0 0 auto;">${escapeHtml((cl.name||'?').trim().slice(0,1).toUpperCase())}</div>`;
+}
 function viewCanvaEdits(){
-  const items = DATA.canvaEdits.slice().sort((a,b)=>(b.createdAt||'').localeCompare(a.createdAt||''));
+  const clients = DATA.canvaClients.slice().sort((a,b)=>(a.name||'').localeCompare(b.name||''));
   return `
     <h1>Canva Edits</h1>
-    <div class="subtitle">Save your poster Canva edit links here for easy access.</div>
+    <div class="subtitle">Poster edit links organized by client — handy when collaborating with the team.</div>
     <div class="toolbar">
-      <button class="btn" id="addCanvaBtn">+ Add Poster</button>
+      <button class="btn" id="addClientBtn">+ Add Client</button>
     </div>
-    <div class="panel">
-      ${items.length===0 ? '<div class="empty">No posters yet. Click "Add Poster" to save your first Canva edit link.</div>' : `
-      <table>
-        <tr><th>Poster</th><th>Notes</th><th></th></tr>
-        ${items.map(c=>`
-          <tr>
-            <td>
-              <div>${escapeHtml(c.title||'')}</div>
-              <div class="note" style="margin-top:2px;word-break:break-all;">${escapeHtml(c.link||'')}</div>
-            </td>
-            <td>${escapeHtml(c.notes||'')}</td>
-            <td class="row-actions">
-              <button class="btn small" data-canvaopen="${c.id}">↗ Open in Canva</button>
-              <button class="btn small secondary" data-canvaedit="${c.id}">Edit</button>
-              <button class="btn danger" data-canvadel="${c.id}">Delete</button>
-            </td>
-          </tr>
-        `).join('')}
-      </table>`}
+    ${clients.length===0 ? `<div class="panel"><div class="empty">No clients yet. Click "Add Client" to start organizing poster links.</div></div>` : clients.map(cl=>{
+      const links = cl.links || [];
+      return `
+      <div class="panel">
+        <div class="panel-head" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;">
+          <div style="display:flex;align-items:center;gap:12px;">
+            ${clientLogoHtml(cl, 40)}
+            <h2 style="margin:0;">${escapeHtml(cl.name||'')}</h2>
+          </div>
+          <div class="row-actions">
+            <button class="btn small" data-addlink="${cl.id}">+ Add Link</button>
+            <button class="btn small secondary" data-clientedit="${cl.id}">Edit Client</button>
+            <button class="btn danger" data-clientdel="${cl.id}">Delete Client</button>
+          </div>
+        </div>
+        ${links.length===0 ? '<div class="empty">No links yet for this client.</div>' : `
+        <table>
+          <tr><th>Link Name</th><th></th></tr>
+          ${links.map(l=>`
+            <tr>
+              <td>
+                <div>${escapeHtml(l.name||'')}</div>
+                <div class="note" style="margin-top:2px;word-break:break-all;">${escapeHtml(l.url||'')}</div>
+              </td>
+              <td class="row-actions">
+                <button class="btn small" data-linkopen="${cl.id}|${l.id}">↗ Open in Canva</button>
+                <button class="btn small secondary" data-linkedit="${cl.id}|${l.id}">Edit</button>
+                <button class="btn danger" data-linkdel="${cl.id}|${l.id}">Delete</button>
+              </td>
+            </tr>
+          `).join('')}
+        </table>`}
+      </div>
+    `;}).join('')}
+  `;
+}
+function canvaClientFormHtml(cl){
+  cl = cl || {id:null, name:'', logo:''};
+  return `
+    <h3>${cl.id?'Edit Client':'Add Client'}</h3>
+    <div class="form-grid">
+      <div><label>Client Name</label><input id="f_cl_name" value="${escapeHtml(cl.name)}" placeholder="e.g. Sharma Family"></div>
+    </div>
+    <label style="display:block;margin-top:14px;">Client Logo</label>
+    <div style="display:flex;align-items:center;gap:10px;margin-top:6px;">
+      ${cl.logo ? clientLogoHtml(cl, 56) : `<span class="note">No logo uploaded yet.</span>`}
+    </div>
+    <div style="margin-top:8px;display:flex;gap:8px;">
+      <label class="btn secondary" style="cursor:pointer;">Upload Logo<input type="file" id="f_cl_logo_file" accept="image/*" style="display:none;"></label>
+      ${cl.logo ? `<button class="btn danger" id="f_cl_logo_clear" type="button">Remove</button>` : ''}
+    </div>
+    <input type="hidden" id="f_cl_logo" value="${escapeHtml(cl.logo||'')}">
+    <div style="margin-top:16px;display:flex;gap:10px;justify-content:flex-end;">
+      <button class="btn secondary" id="cancelBtn">Cancel</button>
+      <button class="btn" id="saveBtn">Save</button>
     </div>
   `;
 }
-function canvaEditFormHtml(c){
-  c = c || {id:null, title:'', link:'', notes:''};
+function canvaLinkFormHtml(link){
+  link = link || {id:null, name:'', url:''};
   return `
-    <h3>${c.id?'Edit Poster':'Add Poster'}</h3>
+    <h3>${link.id?'Edit Link':'Add Link'}</h3>
     <div class="form-grid">
-      <div><label>Poster Name</label><input id="f_c_title" value="${escapeHtml(c.title)}" placeholder="e.g. Sharma Wedding Poster"></div>
-      <div><label>Canva Edit Link</label><input id="f_c_link" value="${escapeHtml(c.link||'')}" placeholder="https://www.canva.com/design/..."></div>
+      <div><label>Link Name</label><input id="f_ln_name" value="${escapeHtml(link.name)}" placeholder="e.g. Wedding Poster v2"></div>
+      <div><label>Canva Edit Link</label><input id="f_ln_url" value="${escapeHtml(link.url||'')}" placeholder="https://www.canva.com/design/..."></div>
     </div>
-    <label>Notes</label>
-    <textarea id="f_c_notes" placeholder="Other details...">${escapeHtml(c.notes||'')}</textarea>
     <div style="margin-top:16px;display:flex;gap:10px;justify-content:flex-end;">
       <button class="btn secondary" id="cancelBtn">Cancel</button>
       <button class="btn" id="saveBtn">Save</button>
@@ -2588,44 +2645,110 @@ function canvaEditFormHtml(c){
   `;
 }
 function wireCanvaEdits(){
-  document.getElementById('addCanvaBtn').onclick = ()=>{
-    openModal(canvaEditFormHtml(null));
-    bindCanvaEditForm(null);
+  document.getElementById('addClientBtn').onclick = ()=>{
+    openModal(canvaClientFormHtml(null));
+    bindCanvaClientForm(null);
   };
-  document.querySelectorAll('[data-canvaedit]').forEach(btn=>{
+  document.querySelectorAll('[data-clientedit]').forEach(btn=>{
     btn.onclick = ()=>{
-      const c = DATA.canvaEdits.find(x=>x.id===btn.dataset.canvaedit);
-      openModal(canvaEditFormHtml(c));
-      bindCanvaEditForm(c);
+      const cl = DATA.canvaClients.find(c=>c.id===btn.dataset.clientedit);
+      openModal(canvaClientFormHtml(cl));
+      bindCanvaClientForm(cl);
     };
   });
-  document.querySelectorAll('[data-canvadel]').forEach(btn=>{
+  document.querySelectorAll('[data-clientdel]').forEach(btn=>{
     btn.onclick = ()=>{
-      if(!confirm('Delete this poster link?')) return;
-      DATA.canvaEdits = DATA.canvaEdits.filter(x=>x.id!==btn.dataset.canvadel);
+      const cl = DATA.canvaClients.find(c=>c.id===btn.dataset.clientdel);
+      const linkCount = (cl && cl.links) ? cl.links.length : 0;
+      if(!confirm(`Delete this client${linkCount?` and its ${linkCount} saved link(s)`:''}?`)) return;
+      DATA.canvaClients = DATA.canvaClients.filter(c=>c.id!==btn.dataset.clientdel);
       save(); render();
     };
   });
-  document.querySelectorAll('[data-canvaopen]').forEach(btn=>{
+  document.querySelectorAll('[data-addlink]').forEach(btn=>{
     btn.onclick = ()=>{
-      const c = DATA.canvaEdits.find(x=>x.id===btn.dataset.canvaopen);
-      if(!c || !c.link) return;
-      window.open(c.link, '_blank', 'noopener');
+      openModal(canvaLinkFormHtml(null));
+      bindCanvaLinkForm(btn.dataset.addlink, null);
+    };
+  });
+  document.querySelectorAll('[data-linkedit]').forEach(btn=>{
+    btn.onclick = ()=>{
+      const [clientId, linkId] = btn.dataset.linkedit.split('|');
+      const cl = DATA.canvaClients.find(c=>c.id===clientId);
+      const link = cl && (cl.links||[]).find(l=>l.id===linkId);
+      openModal(canvaLinkFormHtml(link));
+      bindCanvaLinkForm(clientId, link);
+    };
+  });
+  document.querySelectorAll('[data-linkdel]').forEach(btn=>{
+    btn.onclick = ()=>{
+      const [clientId, linkId] = btn.dataset.linkdel.split('|');
+      if(!confirm('Delete this link?')) return;
+      const cl = DATA.canvaClients.find(c=>c.id===clientId);
+      if(cl) cl.links = (cl.links||[]).filter(l=>l.id!==linkId);
+      save(); render();
+    };
+  });
+  document.querySelectorAll('[data-linkopen]').forEach(btn=>{
+    btn.onclick = ()=>{
+      const [clientId, linkId] = btn.dataset.linkopen.split('|');
+      const cl = DATA.canvaClients.find(c=>c.id===clientId);
+      const link = cl && (cl.links||[]).find(l=>l.id===linkId);
+      if(!link || !link.url) return;
+      window.open(link.url, '_blank', 'noopener');
     };
   });
 }
-function bindCanvaEditForm(c){
+function bindCanvaClientForm(cl){
+  document.getElementById('cancelBtn').onclick = closeModal;
+  const logoFileInput = document.getElementById('f_cl_logo_file');
+  if(logoFileInput){
+    logoFileInput.onchange = async ()=>{
+      const file = logoFileInput.files && logoFileInput.files[0];
+      if(!file) return;
+      const dataUrl = await fileToDataUrl(file);
+      const rec = cl || {id:null, name:document.getElementById('f_cl_name').value, logo:''};
+      rec.logo = dataUrl;
+      openModal(canvaClientFormHtml(rec));
+      bindCanvaClientForm(rec);
+    };
+  }
+  const logoClearBtn = document.getElementById('f_cl_logo_clear');
+  if(logoClearBtn){
+    logoClearBtn.onclick = ()=>{
+      const rec = cl || {id:null, name:document.getElementById('f_cl_name').value, logo:''};
+      rec.logo = '';
+      openModal(canvaClientFormHtml(rec));
+      bindCanvaClientForm(rec);
+    };
+  }
+  document.getElementById('saveBtn').onclick = ()=>{
+    const name = document.getElementById('f_cl_name').value.trim();
+    if(!name){ alert('Please enter a client name.'); return; }
+    const logo = document.getElementById('f_cl_logo').value;
+    const isNew = !cl;
+    const rec = cl || {id:uid(), links:[]};
+    rec.name = name;
+    rec.logo = logo;
+    rec.links ||= [];
+    if(isNew) DATA.canvaClients.push(rec);
+    save(); closeModal(); render();
+  };
+}
+function bindCanvaLinkForm(clientId, link){
   document.getElementById('cancelBtn').onclick = closeModal;
   document.getElementById('saveBtn').onclick = ()=>{
-    const title = document.getElementById('f_c_title').value.trim();
-    const link = document.getElementById('f_c_link').value.trim();
-    if(!title || !link){ alert('Please enter a poster name and the Canva link.'); return; }
-    const isNew = !c;
-    const rec = c || {id:uid(), createdAt:new Date().toISOString()};
-    rec.title = title;
-    rec.link = link;
-    rec.notes = document.getElementById('f_c_notes').value.trim();
-    if(isNew) DATA.canvaEdits.push(rec);
+    const name = document.getElementById('f_ln_name').value.trim();
+    const url = document.getElementById('f_ln_url').value.trim();
+    if(!name || !url){ alert('Please enter a link name and the Canva link.'); return; }
+    const cl = DATA.canvaClients.find(c=>c.id===clientId);
+    if(!cl) return;
+    cl.links ||= [];
+    const isNew = !link;
+    const rec = link || {id:uid()};
+    rec.name = name;
+    rec.url = url;
+    if(isNew) cl.links.push(rec);
     save(); closeModal(); render();
   };
 }
