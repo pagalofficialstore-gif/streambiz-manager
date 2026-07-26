@@ -128,6 +128,7 @@
   .pill.income{color:var(--pos);background:var(--pos-soft);border-color:transparent;}
   .pill.expense{color:var(--neg);background:var(--neg-soft);border-color:transparent;}
   .pill.pending{color:var(--warn);background:var(--warn-soft);border-color:transparent;}
+  .pill.query{color:#8a6d00;background:#fff3b0;border-color:transparent;}
   tr.pending-row td{background:var(--warn-soft);}
 
   .empty{color:var(--muted);font-size:14px;padding:28px 0;text-align:center;}
@@ -2335,7 +2336,7 @@ function viewBookings(){
     }
     const statusPill = b.status==='Confirmed'
       ? `<span class="pill income">Confirmed</span>`
-      : `<span class="pill pending">Query</span>`;
+      : `<span class="pill query">Query</span>`;
     return `
       <tr style="${isPast?'opacity:.55;':''}">
         <td>${b.date||''}</td>
