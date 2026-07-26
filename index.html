@@ -2383,7 +2383,8 @@ function viewBookings(){
         <td>${b.quotationAmount?fmt(Number(b.quotationAmount)):'—'}</td>
         <td>${syncPill}</td>
         <td class="row-actions">
-          ${b.customerPhone?`<button class="btn small" data-whatsapp="${b.id}">💬 WhatsApp</button>`:''}
+          ${b.status!=='Confirmed'?`<button class="btn small" data-bconfirm="${b.id}">✓ Confirm</button>`:''}
+          ${b.customerPhone?`<button class="btn small secondary" data-whatsapp="${b.id}">💬 WhatsApp</button>`:''}
           <button class="btn small secondary" data-bedit="${b.id}">Edit</button>
           <button class="btn danger" data-bdel="${b.id}">Delete</button>
         </td>
@@ -2469,6 +2470,17 @@ function wireBookings(){
       const bk = DATA.bookings.find(b=>b.id===btn.dataset.whatsapp);
       if(!bk) return;
       window.open(bookingWhatsappLink(bk), '_blank', 'noopener');
+    };
+  });
+  document.querySelectorAll('[data-bconfirm]').forEach(btn=>{
+    btn.onclick = async ()=>{
+      const bk = DATA.bookings.find(b=>b.id===btn.dataset.bconfirm);
+      if(!bk) return;
+      bk.status = 'Confirmed';
+      save(); render();
+      await syncBookingToCalendar(bk, 'update');
+      save();
+      if(currentTab==='bookings') render();
     };
   });
 }
