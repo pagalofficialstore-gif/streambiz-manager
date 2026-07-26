@@ -301,6 +301,7 @@
       <div class="nav-item active" data-tab="dashboard"><svg class="nav-ic" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"></rect><rect x="14" y="3" width="7" height="7" rx="1.5"></rect><rect x="14" y="14" width="7" height="7" rx="1.5"></rect><rect x="3" y="14" width="7" height="7" rx="1.5"></rect></svg><span class="label-text">Dashboard</span><span class="label-short">Home</span></div>
       <div class="nav-item" data-tab="events"><svg class="nav-ic" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"></rect><path d="M7 4v16M17 4v16M3 9h4M3 15h4M17 9h4M17 15h4"></path></svg><span class="label-text">Events</span><span class="label-short">Events</span></div>
       <div class="nav-item" data-tab="bookings"><svg class="nav-ic" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"></rect><path d="M3 10h18M8 3v4M16 3v4"></path><path d="M8 14h2M8 17h2M14 14h2M14 17h2"></path></svg><span class="label-text">Bookings</span><span class="label-short">Book</span></div>
+      <div class="nav-item" data-tab="canva"><svg class="nav-ic" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"></rect><circle cx="8.5" cy="9.5" r="1.8"></circle><path d="M21 16l-5.5-5.5a2 2 0 0 0-2.8 0L3 20"></path></svg><span class="label-text">Canva Edits</span><span class="label-short">Canva</span></div>
       <div class="nav-item" data-tab="income"><svg class="nav-ic" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 17 9 11 13 15 21 7"></polyline><polyline points="15 7 21 7 21 13"></polyline></svg><span class="label-text">Income</span><span class="label-short">Income</span></div>
       <div class="nav-item" data-tab="expenses"><svg class="nav-ic" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 3h14v18l-3-1.6-2 1.6-2-1.6-2 1.6L5 21V3z"></path><path d="M8.5 8h7M8.5 12h7M8.5 16h4"></path></svg><span class="label-text">Expenses</span><span class="label-short">Costs</span><span id="expenseNavBadge" class="nav-badge" style="display:none;"></span></div>
       <div class="nav-item" data-tab="investments"><svg class="nav-ic" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8l9-5 9 5v8l-9 5-9-5V8z"></path><path d="M3 8l9 5 9-5M12 13v8"></path></svg><span class="label-text">Investments</span><span class="label-short">Assets</span><span id="investmentNavBadge" class="nav-badge" style="display:none;"></span></div>
@@ -422,7 +423,7 @@ const DEFAULT_INVOICE_SETTINGS = {
 };
 function blankData(){
   return {
-    events:[], income:[], expenses:[], investments:[], staff:[], salaryPayments:[], recurringExpenses:[], bookings:[],
+    events:[], income:[], expenses:[], investments:[], staff:[], salaryPayments:[], recurringExpenses:[], bookings:[], canvaEdits:[],
     settings:{youtubeApiKey:'', monthlyEventTarget:5, cloudSync:{...DEFAULT_CLOUD_SYNC}, sheetSync:{...DEFAULT_SHEET_SYNC}, calendarSync:{...DEFAULT_CALENDAR_SYNC}, invoiceSettings:{...DEFAULT_INVOICE_SETTINGS}},
     eventTypes:[], partners:[], updatedAt: null,
   };
@@ -437,6 +438,7 @@ function normalizeData(d){
   d.investments ||= []; d.staff ||= []; d.salaryPayments ||= [];
   d.recurringExpenses ||= [];
   d.bookings ||= [];
+  d.canvaEdits ||= [];
   d.settings ||= {}; d.settings.youtubeApiKey ||= '';
   d.settings.monthlyEventTarget ||= 5;
   if(!d.settings.cloudSync || !d.settings.cloudSync.url){
@@ -1387,6 +1389,7 @@ function render(){
     case 'dashboard': main.innerHTML = viewDashboard(); wireDashboard(); break;
     case 'events': main.innerHTML = viewEvents(); wireEvents(); break;
     case 'bookings': main.innerHTML = viewBookings(); wireBookings(); break;
+    case 'canva': main.innerHTML = viewCanvaEdits(); wireCanvaEdits(); break;
     case 'income': main.innerHTML = viewIncome(); wireIncome(); break;
     case 'expenses': main.innerHTML = viewExpenses(); wireExpenses(); break;
     case 'investments': main.innerHTML = viewInvestments(); wireInvestments(); break;
@@ -2532,6 +2535,98 @@ function bindBookingForm(bk){
     await syncBookingToCalendar(rec, isNew?'create':'update');
     save();
     if(currentTab==='bookings') render();
+  };
+}
+
+// ============================================================
+// CANVA EDITS
+// ============================================================
+function viewCanvaEdits(){
+  const items = DATA.canvaEdits.slice().sort((a,b)=>(b.createdAt||'').localeCompare(a.createdAt||''));
+  return `
+    <h1>Canva Edits</h1>
+    <div class="subtitle">Save your poster Canva edit links here for easy access.</div>
+    <div class="toolbar">
+      <button class="btn" id="addCanvaBtn">+ Add Poster</button>
+    </div>
+    <div class="panel">
+      ${items.length===0 ? '<div class="empty">No posters yet. Click "Add Poster" to save your first Canva edit link.</div>' : `
+      <table>
+        <tr><th>Poster</th><th>Notes</th><th></th></tr>
+        ${items.map(c=>`
+          <tr>
+            <td>
+              <div>${escapeHtml(c.title||'')}</div>
+              <div class="note" style="margin-top:2px;word-break:break-all;">${escapeHtml(c.link||'')}</div>
+            </td>
+            <td>${escapeHtml(c.notes||'')}</td>
+            <td class="row-actions">
+              <button class="btn small" data-canvaopen="${c.id}">↗ Open in Canva</button>
+              <button class="btn small secondary" data-canvaedit="${c.id}">Edit</button>
+              <button class="btn danger" data-canvadel="${c.id}">Delete</button>
+            </td>
+          </tr>
+        `).join('')}
+      </table>`}
+    </div>
+  `;
+}
+function canvaEditFormHtml(c){
+  c = c || {id:null, title:'', link:'', notes:''};
+  return `
+    <h3>${c.id?'Edit Poster':'Add Poster'}</h3>
+    <div class="form-grid">
+      <div><label>Poster Name</label><input id="f_c_title" value="${escapeHtml(c.title)}" placeholder="e.g. Sharma Wedding Poster"></div>
+      <div><label>Canva Edit Link</label><input id="f_c_link" value="${escapeHtml(c.link||'')}" placeholder="https://www.canva.com/design/..."></div>
+    </div>
+    <label>Notes</label>
+    <textarea id="f_c_notes" placeholder="Other details...">${escapeHtml(c.notes||'')}</textarea>
+    <div style="margin-top:16px;display:flex;gap:10px;justify-content:flex-end;">
+      <button class="btn secondary" id="cancelBtn">Cancel</button>
+      <button class="btn" id="saveBtn">Save</button>
+    </div>
+  `;
+}
+function wireCanvaEdits(){
+  document.getElementById('addCanvaBtn').onclick = ()=>{
+    openModal(canvaEditFormHtml(null));
+    bindCanvaEditForm(null);
+  };
+  document.querySelectorAll('[data-canvaedit]').forEach(btn=>{
+    btn.onclick = ()=>{
+      const c = DATA.canvaEdits.find(x=>x.id===btn.dataset.canvaedit);
+      openModal(canvaEditFormHtml(c));
+      bindCanvaEditForm(c);
+    };
+  });
+  document.querySelectorAll('[data-canvadel]').forEach(btn=>{
+    btn.onclick = ()=>{
+      if(!confirm('Delete this poster link?')) return;
+      DATA.canvaEdits = DATA.canvaEdits.filter(x=>x.id!==btn.dataset.canvadel);
+      save(); render();
+    };
+  });
+  document.querySelectorAll('[data-canvaopen]').forEach(btn=>{
+    btn.onclick = ()=>{
+      const c = DATA.canvaEdits.find(x=>x.id===btn.dataset.canvaopen);
+      if(!c || !c.link) return;
+      window.open(c.link, '_blank', 'noopener');
+    };
+  });
+}
+function bindCanvaEditForm(c){
+  document.getElementById('cancelBtn').onclick = closeModal;
+  document.getElementById('saveBtn').onclick = ()=>{
+    const title = document.getElementById('f_c_title').value.trim();
+    const link = document.getElementById('f_c_link').value.trim();
+    if(!title || !link){ alert('Please enter a poster name and the Canva link.'); return; }
+    const isNew = !c;
+    const rec = c || {id:uid(), createdAt:new Date().toISOString()};
+    rec.title = title;
+    rec.link = link;
+    rec.notes = document.getElementById('f_c_notes').value.trim();
+    if(isNew) DATA.canvaEdits.push(rec);
+    save(); closeModal(); render();
   };
 }
 
