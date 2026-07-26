@@ -2565,7 +2565,10 @@ function clientLogoHtml(cl, size){
     : `<div style="width:${size}px;height:${size}px;border-radius:8px;background:var(--border);display:flex;align-items:center;justify-content:center;font-weight:600;flex:0 0 auto;">${escapeHtml((cl.name||'?').trim().slice(0,1).toUpperCase())}</div>`;
 }
 function viewCanvaEdits(){
-  const clients = DATA.canvaClients.slice().sort((a,b)=>(a.name||'').localeCompare(b.name||''));
+  const clients = DATA.canvaClients.slice().sort((a,b)=>{
+    if(!!a.pinned !== !!b.pinned) return a.pinned ? -1 : 1;
+    return (a.name||'').localeCompare(b.name||'');
+  });
   return `
     <h1>Canva Edits</h1>
     <div class="subtitle">Poster edit links organized by client — handy when collaborating with the team.</div>
@@ -2580,9 +2583,11 @@ function viewCanvaEdits(){
           <div style="display:flex;align-items:center;gap:12px;">
             ${clientLogoHtml(cl, 40)}
             <h2 style="margin:0;">${escapeHtml(cl.name||'')}</h2>
+            ${cl.pinned ? `<span class="pill income">📌 Pinned</span>` : ''}
           </div>
           <div class="row-actions">
             <button class="btn small" data-addlink="${cl.id}">+ Add Link</button>
+            <button class="btn small secondary" data-clientpin="${cl.id}">${cl.pinned ? 'Unpin' : '📌 Pin to Top'}</button>
             <button class="btn small secondary" data-clientedit="${cl.id}">Edit Client</button>
             <button class="btn danger" data-clientdel="${cl.id}">Delete Client</button>
           </div>
@@ -2662,6 +2667,14 @@ function wireCanvaEdits(){
       const linkCount = (cl && cl.links) ? cl.links.length : 0;
       if(!confirm(`Delete this client${linkCount?` and its ${linkCount} saved link(s)`:''}?`)) return;
       DATA.canvaClients = DATA.canvaClients.filter(c=>c.id!==btn.dataset.clientdel);
+      save(); render();
+    };
+  });
+  document.querySelectorAll('[data-clientpin]').forEach(btn=>{
+    btn.onclick = ()=>{
+      const cl = DATA.canvaClients.find(c=>c.id===btn.dataset.clientpin);
+      if(!cl) return;
+      cl.pinned = !cl.pinned;
       save(); render();
     };
   });
