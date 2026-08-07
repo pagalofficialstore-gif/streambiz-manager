@@ -1910,6 +1910,16 @@ function viewDashboard(){
     .filter(i=>i.type==='repayment')
     .reduce((s,i)=>s+Number(i.cost||0),0);
   const bankBalance = inc - exp - salPaid - profitFundedInvestments - partnerRepayments;
+  // "Remaining to Recover": total capital partners ever put in, minus
+  // whatever's already been repaid to them, minus what's currently sitting
+  // as cash at bank (since that cash is available and could be used to repay
+  // them at any time). Shrinks both as repayments happen and as cash builds
+  // up; floored at 0 since a negative "amount left to recover" isn't
+  // meaningful.
+  const partnerInvestedGross = approvedInvestments()
+    .filter(i=>i.type!=='repayment' && i.fundingSource==='partner')
+    .reduce((s,i)=>s+Number(i.cost||0),0);
+  const remainingToRecover = Math.max(0, partnerInvestedGross - partnerRepayments - bankBalance);
 
   const now = new Date();
   const ymKey = (d)=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');
@@ -1980,7 +1990,7 @@ function viewDashboard(){
         </div>
         <div class="h-sub">
           <div><div class="s-lbl">Net Profit · all time</div><div class="s-val">${fmt(net)}</div></div>
-          <div><div class="s-lbl">Investment Value</div><div class="s-val">${fmt(invCost)}</div></div>
+          <div><div class="s-lbl">Remaining to Recover</div><div class="s-val">${fmt(remainingToRecover)}</div></div>
           <div><div class="s-lbl">Events Logged</div><div class="s-val">${DATA.events.length}</div></div>
           <div>
             <div class="s-lbl">Monthly Target</div>
