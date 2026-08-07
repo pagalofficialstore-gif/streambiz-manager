@@ -1893,17 +1893,23 @@ function viewDashboard(){
   const approvedExp = approvedExpenses();
   const inc = totalIncome(DATA.income);
   const exp = totalExpenses(approvedExp);
-  const invCost = approvedInvestments().reduce((s,i)=>s+Number(i.cost||0),0);
+  const invCost = approvedInvestments().filter(i=>i.type!=='repayment').reduce((s,i)=>s+Number(i.cost||0),0);
   const salPaid = DATA.salaryPayments.reduce((s,p)=>s+Number(p.amount||0),0);
   const net = inc - exp - salPaid;
   // Money actually left in the bank: income minus every rupee that left the
-  // business's own cash — expenses, salaries, and any investment paid for out
-  // of profit. Investments funded directly by a partner's own money are NOT
-  // subtracted here, since that cash never came out of the business account.
+  // business's own cash — expenses, salaries, any investment paid for out
+  // of profit, and any partner repayments (capital returned to a partner
+  // from profit). Investments funded directly by a partner's own money are
+  // NOT subtracted here, since that cash never came out of the business
+  // account. Repayments don't affect Net Profit — they're a capital
+  // distribution, not an operating expense.
   const profitFundedInvestments = approvedInvestments()
-    .filter(i=>i.fundingSource==='profit')
+    .filter(i=>i.type!=='repayment' && i.fundingSource==='profit')
     .reduce((s,i)=>s+Number(i.cost||0),0);
-  const bankBalance = inc - exp - salPaid - profitFundedInvestments;
+  const partnerRepayments = approvedInvestments()
+    .filter(i=>i.type==='repayment')
+    .reduce((s,i)=>s+Number(i.cost||0),0);
+  const bankBalance = inc - exp - salPaid - profitFundedInvestments - partnerRepayments;
 
   const now = new Date();
   const ymKey = (d)=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');
@@ -3395,6 +3401,7 @@ function generateRecurringExpenses(){
 // INVESTMENTS
 // ============================================================
 function investmentFundedByLabel(r){
+  if(r.type==='repayment') return '↩ Repaid to ' + (r.partner||'partner');
   if(r.fundingSource==='profit') return 'Business Profit';
   if(r.fundingSource==='partner' && r.partner) return r.partner;
   return '—';
@@ -3486,12 +3493,17 @@ function rejectInvestment(id){
 function viewInvestments(){
   const rows = DATA.investments.slice().sort((a,b)=>(b.date||'').localeCompare(a.date||''));
   const approvedRows = approvedInvestments();
-  const totalCost = approvedRows.reduce((s,r)=>s+Number(r.cost||0),0);
-  const totalBook = approvedRows.reduce((s,r)=>s+bookValue(r),0);
-  const profitFunded = approvedRows.filter(r=>r.fundingSource==='profit').reduce((s,r)=>s+Number(r.cost||0),0);
+  const purchaseRows = approvedRows.filter(r=>r.type!=='repayment');
+  const repaymentRows = approvedRows.filter(r=>r.type==='repayment');
+  const totalCost = purchaseRows.reduce((s,r)=>s+Number(r.cost||0),0);
+  const totalBook = purchaseRows.reduce((s,r)=>s+bookValue(r),0);
+  const profitFunded = purchaseRows.filter(r=>r.fundingSource==='profit').reduce((s,r)=>s+Number(r.cost||0),0);
+  const totalRepaid = repaymentRows.reduce((s,r)=>s+Number(r.cost||0),0);
   const partnerCards = DATA.partners.map(p=>{
-    const amt = approvedRows.filter(r=>r.fundingSource==='partner' && r.partner===p.name).reduce((s,r)=>s+Number(r.cost||0),0);
-    return `<div class="card"><div class="label">Invested by ${escapeHtml(p.name)}</div><div class="value">${fmt(amt)}</div></div>`;
+    const invested = purchaseRows.filter(r=>r.fundingSource==='partner' && r.partner===p.name).reduce((s,r)=>s+Number(r.cost||0),0);
+    const repaid = repaymentRows.filter(r=>r.partner===p.name).reduce((s,r)=>s+Number(r.cost||0),0);
+    const net = invested - repaid;
+    return `<div class="card"><div class="label">Invested by ${escapeHtml(p.name)}</div><div class="value">${fmt(net)}</div>${repaid>0?`<div class="note" style="margin-top:2px;">${fmt(invested)} invested − ${fmt(repaid)} repaid</div>`:''}</div>`;
   }).join('');
   const pendingCount = rows.filter(r=>r.requestedBy).length;
   return `
@@ -3503,28 +3515,33 @@ function viewInvestments(){
       <div class="card"><div class="label">Current Book Value (est.)</div><div class="value">${fmt(totalBook)}</div></div>
       ${partnerCards}
       <div class="card"><div class="label">Funded from Business Profit</div><div class="value">${fmt(profitFunded)}</div></div>
+      ${totalRepaid>0?`<div class="card"><div class="label">Repaid to Partners</div><div class="value">${fmt(totalRepaid)}</div></div>`:''}
     </div>
     <div class="toolbar">
       <div></div>
-      <button class="btn" id="addInvBtn">+ Add Investment</button>
+      <div style="display:flex;gap:10px;">
+        <button class="btn secondary" id="addRepayBtn">↩ Repay Partner</button>
+        <button class="btn" id="addInvBtn">+ Add Investment</button>
+      </div>
     </div>
     <div class="panel">
       ${rows.length===0 ? '<div class="empty">No investments logged yet.</div>' : `
       <table>
-        <tr><th>Date</th><th>Item</th><th>Cost</th><th>Funded By</th><th>Useful Life</th><th>Book Value Today</th><th></th></tr>
+        <tr><th>Date</th><th>Item</th><th>Amount</th><th>Funded By</th><th>Useful Life</th><th>Book Value Today</th><th></th></tr>
         ${rows.map(r=>{
           const pending = !!r.requestedBy;
+          const isRepay = r.type==='repayment';
           return `
           <tr class="${pending?'pending-row':''}">
             <td>${r.date||''}</td>
-            <td>${escapeHtml(r.item)}${auditNote(r)?`<div class="note" style="margin-top:2px;">${escapeHtml(auditNote(r))}</div>`:''}
+            <td>${isRepay?'↩ ':''}${escapeHtml(r.item)}${auditNote(r)?`<div class="note" style="margin-top:2px;">${escapeHtml(auditNote(r))}</div>`:''}
               ${pending?`<div class="note" style="margin-top:2px;"><span class="pill pending">${escapeHtml(investmentStatusLabel(r))}</span> — requested by ${escapeHtml(r.requestedBy)}</div>`:''}
               ${r.status==='pending_edit' && r.pendingData ? `<div class="note" style="margin-top:2px;">Proposed: ${escapeHtml(r.pendingData.item)} · ${fmt(r.pendingData.cost)} · ${escapeHtml(investmentFundedByLabel(r.pendingData))}</div>` : ''}
             </td>
             <td>${fmt(r.cost)}</td>
-            <td><span class="pill">${escapeHtml(investmentFundedByLabel(r))}</span></td>
-            <td>${r.usefulLifeYears||0} yrs</td>
-            <td>${fmt(bookValue(r))}</td>
+            <td><span class="pill ${isRepay?'expense':''}">${escapeHtml(investmentFundedByLabel(r))}</span></td>
+            <td>${isRepay?'—':(r.usefulLifeYears||0)+' yrs'}</td>
+            <td>${isRepay?'—':fmt(bookValue(r))}</td>
             <td class="row-actions">
               ${pending
                 ? (canActOnInvestment(r)
@@ -3540,30 +3557,45 @@ function viewInvestments(){
   `;
 }
 function invFormHtml(rec){
-  rec = rec || {id:null,date:todayStr(),item:'',cost:'',usefulLifeYears:3,notes:'',fundingSource:'partner',partner:''};
+  rec = rec || {id:null,type:'purchase',date:todayStr(),item:'',cost:'',usefulLifeYears:3,notes:'',fundingSource:'partner',partner:''};
+  const isRepay = rec.type === 'repayment';
   const isProfit = rec.fundingSource === 'profit';
   return `
-    <h3>${rec.id?'Edit Investment':'Add Investment'}</h3>
+    <h3>${rec.id?(isRepay?'Edit Repayment':'Edit Investment'):'Add Investment / Repayment'}</h3>
     ${approvalEnabled() ? `<div class="note" style="margin-bottom:10px;">This will need ${rec.id?'an edit':'an'} approval from your business partner before it counts.</div>` : ''}
     <div class="form-grid">
-      <div><label>Purchase Date</label><input id="f_date" type="date" value="${rec.date}"></div>
-      <div><label>Cost (${CURRENCY})</label><input id="f_cost" type="number" step="0.01" value="${rec.cost}"></div>
-      <div><label>Useful Life (years)</label><input id="f_life" type="number" step="1" value="${rec.usefulLifeYears}"></div>
-    </div>
-    <label>Item</label>
-    <input id="f_item" value="${escapeHtml(rec.item)}" placeholder="e.g. Sony A7SIII Camera">
-    <div class="form-grid" style="margin-top:10px;">
       <div>
+        <label>Type</label>
+        <select id="f_type">
+          <option value="purchase" ${!isRepay?'selected':''}>Equipment Purchase</option>
+          <option value="repayment" ${isRepay?'selected':''}>Repay Partner (from Profit)</option>
+        </select>
+      </div>
+      <div><label id="f_dateLabel">${isRepay?'Repayment Date':'Purchase Date'}</label><input id="f_date" type="date" value="${rec.date}"></div>
+    </div>
+    <div class="form-grid" style="margin-top:10px;">
+      <div><label id="f_costLabel">${isRepay?`Repayment Amount (${CURRENCY})`:`Cost (${CURRENCY})`}</label><input id="f_cost" type="number" step="0.01" value="${rec.cost}"></div>
+      <div id="f_lifeWrap" style="${isRepay?'display:none;':''}"><label>Useful Life (years)</label><input id="f_life" type="number" step="1" value="${rec.usefulLifeYears}"></div>
+    </div>
+    <div id="f_itemWrap" style="${isRepay?'display:none;':''}">
+      <label>Item</label>
+      <input id="f_item" value="${escapeHtml(rec.item)}" placeholder="e.g. Sony A7SIII Camera">
+    </div>
+    <div class="form-grid" style="margin-top:10px;">
+      <div id="f_fundingSourceWrap" style="${isRepay?'display:none;':''}">
         <label>Funded By</label>
         <select id="f_fundingSource">
           <option value="partner" ${!isProfit?'selected':''}>Partner Investment</option>
           <option value="profit" ${isProfit?'selected':''}>Business Profit (Reinvested)</option>
         </select>
       </div>
-      <div id="f_partnerWrap" style="${isProfit?'display:none;':''}">
-        <label>Which Partner</label>
+      <div id="f_partnerWrap" style="${(!isRepay && isProfit)?'display:none;':''}">
+        <label id="f_partnerLabel">${isRepay?'Repay To (Partner)':'Which Partner'}</label>
         <select id="f_partner">${partnerOptionsHtml(rec.partner)}</select>
       </div>
+    </div>
+    <div class="note" id="f_repayNote" style="margin-top:6px;${isRepay?'':'display:none;'}">
+      Records a cash payment from the business's own funds back to this partner — reduces their invested balance and today's Money at Bank. Does not affect Net Profit.
     </div>
     <label style="margin-top:10px;">Notes</label>
     <textarea id="f_notes" placeholder="Seller, warranty, serial no...">${escapeHtml(rec.notes||'')}</textarea>
@@ -3575,6 +3607,10 @@ function invFormHtml(rec){
 }
 function wireInvestments(){
   document.getElementById('addInvBtn').onclick = ()=>{ openModal(invFormHtml(null)); bindInvForm(null); };
+  document.getElementById('addRepayBtn').onclick = ()=>{
+    const stub = {id:null,type:'repayment',date:todayStr(),item:'',cost:'',usefulLifeYears:0,notes:'',fundingSource:'',partner:''};
+    openModal(invFormHtml(stub)); bindInvForm(null);
+  };
   document.querySelectorAll('[data-edit]').forEach(btn=>{
     btn.onclick = ()=>{
       const rec = DATA.investments.find(e=>e.id===btn.dataset.edit);
@@ -3621,10 +3657,34 @@ function wireInvestments(){
 function bindInvForm(rec){
   document.getElementById('cancelBtn').onclick = closeModal;
 
+  const typeSelect = document.getElementById('f_type');
+  const dateLabel = document.getElementById('f_dateLabel');
+  const costLabel = document.getElementById('f_costLabel');
+  const lifeWrap = document.getElementById('f_lifeWrap');
+  const itemWrap = document.getElementById('f_itemWrap');
+  const fundingSourceWrap = document.getElementById('f_fundingSourceWrap');
+  const partnerLabel = document.getElementById('f_partnerLabel');
+  const repayNote = document.getElementById('f_repayNote');
   const fundingSelect = document.getElementById('f_fundingSource');
   const partnerWrap = document.getElementById('f_partnerWrap');
+
+  function syncTypeUI(){
+    const isRepay = typeSelect.value === 'repayment';
+    dateLabel.textContent = isRepay ? 'Repayment Date' : 'Purchase Date';
+    costLabel.textContent = isRepay ? `Repayment Amount (${CURRENCY})` : `Cost (${CURRENCY})`;
+    lifeWrap.style.display = isRepay ? 'none' : '';
+    itemWrap.style.display = isRepay ? 'none' : '';
+    fundingSourceWrap.style.display = isRepay ? 'none' : '';
+    partnerLabel.textContent = isRepay ? 'Repay To (Partner)' : 'Which Partner';
+    repayNote.style.display = isRepay ? '' : 'none';
+    partnerWrap.style.display = (isRepay || fundingSelect.value!=='profit') ? '' : 'none';
+  }
+  typeSelect.addEventListener('change', syncTypeUI);
+
   fundingSelect.addEventListener('change', ()=>{
-    partnerWrap.style.display = fundingSelect.value==='profit' ? 'none' : '';
+    if(typeSelect.value!=='repayment'){
+      partnerWrap.style.display = fundingSelect.value==='profit' ? 'none' : '';
+    }
   });
 
   const partnerSelect = document.getElementById('f_partner');
@@ -3647,23 +3707,56 @@ function bindInvForm(rec){
     }
   });
 
+  syncTypeUI();
+
   document.getElementById('saveBtn').onclick = ()=>{
-    const item = document.getElementById('f_item').value.trim();
+    const type = document.getElementById('f_type').value;
     const cost = parseFloat(document.getElementById('f_cost').value);
+    const date = document.getElementById('f_date').value;
+    const notes = document.getElementById('f_notes').value;
+    const partnerVal = document.getElementById('f_partner').value;
+
+    if(type==='repayment'){
+      if(!cost && cost!==0){ alert('Please enter the repayment amount.'); return; }
+      if(!partnerVal || partnerVal==='__add_new__'){
+        alert('Please choose which partner is being repaid, or add one first.');
+        return;
+      }
+      const fields = {
+        type: 'repayment',
+        date,
+        item: 'Repayment to ' + partnerVal,
+        cost,
+        usefulLifeYears: 0,
+        notes,
+        fundingSource: '',
+        partner: partnerVal,
+      };
+      if(rec){
+        const idx = DATA.investments.findIndex(e=>e.id===rec.id);
+        DATA.investments[idx] = buildInvestmentEdit(rec, fields);
+      } else {
+        DATA.investments.push(buildInvestmentCreate(fields));
+      }
+      save(); closeModal(); render();
+      return;
+    }
+
+    const item = document.getElementById('f_item').value.trim();
     if(!item){ alert('Please enter the item name.'); return; }
     if(!cost && cost!==0){ alert('Please enter the cost.'); return; }
     const fundingSource = document.getElementById('f_fundingSource').value;
-    const partnerVal = document.getElementById('f_partner').value;
     if(fundingSource==='partner' && (!partnerVal || partnerVal==='__add_new__')){
       alert('Please choose which partner funded this, or add one first.');
       return;
     }
     const fields = {
-      date: document.getElementById('f_date').value,
+      type: 'purchase',
+      date,
       item,
       cost,
       usefulLifeYears: parseFloat(document.getElementById('f_life').value)||0,
-      notes: document.getElementById('f_notes').value,
+      notes,
       fundingSource,
       partner: fundingSource==='partner' ? partnerVal : '',
     };
@@ -4053,7 +4146,7 @@ function renderReportBody(from, to, eventId, from2, to2){
 
   // Investments are a point-in-time asset snapshot, not a period flow like
   // income/expenses — shown "as of today", independent of the date filter.
-  const invRows = approvedInvestments();
+  const invRows = approvedInvestments().filter(i=>i.type!=='repayment');
   const invCost = invRows.reduce((s,i)=>s+Number(i.cost||0),0);
   const invBookValue = invRows.reduce((s,i)=>s+bookValue(i),0);
   const invDepreciation = invCost - invBookValue;
@@ -4232,8 +4325,11 @@ function cashAtBankTransactions(){
     const base = r.notes || ('Salary: '+staffName(r.staffId));
     rows.push({date:r.date, particular: withEventTag(base, r.eventId), debit:Number(r.amount||0), credit:0});
   });
-  approvedInvestments().filter(i=>i.fundingSource==='profit').forEach(i=>{
+  approvedInvestments().filter(i=>i.type!=='repayment' && i.fundingSource==='profit').forEach(i=>{
     rows.push({date:i.date, particular: 'Investment: '+(i.item||'Equipment'), debit:Number(i.cost||0), credit:0});
+  });
+  approvedInvestments().filter(i=>i.type==='repayment').forEach(i=>{
+    rows.push({date:i.date, particular: 'Partner Repayment: '+(i.partner||''), debit:Number(i.cost||0), credit:0});
   });
   rows.sort((a,b)=> (b.date||'').localeCompare(a.date||''));
   return rows;
