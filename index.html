@@ -13,22 +13,22 @@
 <style>
   *{box-sizing:border-box;}
   :root, [data-theme="light"]{
-    --bg:#f4f6fa; --surface:#ffffff; --surface-2:#eef1f7; --surface-hover:#f5f7fb;
-    --border:#e5e9f1; --border-strong:#d7dde8;
-    --text:#141b28; --text-2:#3d4757; --muted:#6b7688;
-    --accent:#3f6bff; --accent-ink:#ffffff; --accent-soft:#e9f0ff;
-    --pos:#0c9d61; --pos-soft:#e6f6ee;
+    --bg:#f7f8fb; --surface:#ffffff; --surface-2:#f0f2f7; --surface-hover:#f6f8fb;
+    --border:#e7eaf1; --border-strong:#d9dee9;
+    --text:#161c2a; --text-2:#434d5e; --muted:#737e90;
+    --accent:#3f6bff; --accent-2:#6a90ff; --accent-ink:#ffffff; --accent-soft:#eaf0ff;
+    --pos:#0c9d61; --pos-soft:#e8f7ee;
     --neg:#df3941; --neg-soft:#fdecec;
     --warn:#b9760a; --warn-soft:#faf0dc;
-    --shadow:0 1px 2px rgba(16,24,40,.04), 0 6px 20px rgba(16,24,40,.06);
-    --shadow-lg:0 12px 40px rgba(16,24,40,.16);
-    --radius:14px;
+    --shadow:0 1px 2px rgba(16,24,40,.03), 0 4px 16px rgba(16,24,40,.05);
+    --shadow-lg:0 10px 32px rgba(16,24,40,.12);
+    --radius:16px;
   }
   [data-theme="dark"]{
     --bg:#0b0e15; --surface:#141924; --surface-2:#1b2130; --surface-hover:#212938;
     --border:#242c3b; --border-strong:#313a4c;
     --text:#eef1f7; --text-2:#c3cbd9; --muted:#8791a3;
-    --accent:#5b86ff; --accent-ink:#ffffff; --accent-soft:#1a2438;
+    --accent:#5b86ff; --accent-2:#86a6ff; --accent-ink:#ffffff; --accent-soft:#1a2438;
     --pos:#34d399; --pos-soft:#12271f;
     --neg:#ff6b6b; --neg-soft:#2c1719;
     --warn:#ffb84f; --warn-soft:#2a2113;
@@ -54,7 +54,7 @@
   .nav-item .nav-ic{width:20px;height:20px;flex-shrink:0;stroke:currentColor;fill:none;}
   .nav-item .label-short{display:none;}
   .nav-item:hover{background:var(--surface-2);color:var(--text);}
-  .nav-item.active{background:var(--accent);color:var(--accent-ink);box-shadow:var(--shadow);}
+  .nav-item.active{background:var(--accent-soft);color:var(--accent);box-shadow:none;font-weight:700;}
   .nav-badge{margin-left:auto;background:var(--neg);color:#fff;font-size:10px;font-weight:700;border-radius:20px;min-width:18px;height:18px;line-height:18px;text-align:center;padding:0 5px;}
 
   .side-foot{margin-top:auto;display:flex;flex-direction:column;gap:8px;padding-top:14px;}
@@ -82,7 +82,13 @@
 
   /* ---------- Cards ---------- */
   .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:14px;margin-bottom:24px;}
-  .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:18px 18px 16px;box-shadow:var(--shadow);}
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:18px 18px 16px;box-shadow:var(--shadow);transition:box-shadow .15s,transform .15s;}
+  .card:hover{box-shadow:var(--shadow-lg);transform:translateY(-1px);}
+  .card-icon{width:34px;height:34px;border-radius:10px;display:flex;align-items:center;justify-content:center;margin-bottom:12px;}
+  .card-icon svg{width:17px;height:17px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;}
+  .card-icon.pos{background:var(--pos-soft);color:var(--pos);}
+  .card-icon.neg{background:var(--neg-soft);color:var(--neg);}
+  .card-icon.accent{background:var(--accent-soft);color:var(--accent);}
   .card .label{color:var(--muted);font-size:11.5px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px;}
   .card .value{font-size:27px;font-weight:700;letter-spacing:-.02em;font-variant-numeric:tabular-nums;}
   .card .value.pos{color:var(--pos);}
@@ -101,8 +107,8 @@
   tr:not(.thead-row):hover td{background:var(--surface-hover);}
 
   /* ---------- Buttons ---------- */
-  .btn{background:var(--accent);color:var(--accent-ink);border:none;border-radius:10px;padding:10px 16px;font-size:14px;cursor:pointer;font-weight:600;font-family:inherit;transition:filter .15s,background .15s,transform .05s;display:inline-flex;align-items:center;justify-content:center;gap:6px;}
-  .btn:hover{filter:brightness(1.06);}
+  .btn{background:var(--accent);color:var(--accent-ink);border:none;border-radius:10px;padding:10px 16px;font-size:14px;cursor:pointer;font-weight:600;font-family:inherit;transition:filter .15s,background .15s,transform .15s,box-shadow .15s;display:inline-flex;align-items:center;justify-content:center;gap:6px;box-shadow:0 1px 2px rgba(16,24,40,.08);}
+  .btn:hover{filter:brightness(1.05);transform:translateY(-1px);box-shadow:0 6px 16px rgba(63,107,255,.28);}
   .btn:active{transform:translateY(1px);}
   .btn.secondary{background:var(--surface-2);border:1px solid var(--border);color:var(--text);}
   .btn.secondary:hover{background:var(--surface-hover);filter:none;}
@@ -136,7 +142,7 @@
 
   /* ---------- Dashboard ---------- */
   .dash-grid{display:grid;grid-template-columns:1.7fr 1fr;gap:14px;margin-bottom:14px;}
-  .hero{background:linear-gradient(150deg,var(--accent) 0%,#2f52d8 100%);color:#fff;border-radius:var(--radius);padding:24px 26px;box-shadow:var(--shadow-lg);display:flex;flex-direction:column;justify-content:space-between;position:relative;overflow:hidden;min-height:188px;}
+  .hero{background:linear-gradient(150deg,var(--accent-2) 0%,var(--accent) 55%,#2f52d8 100%);color:#fff;border-radius:var(--radius);padding:24px 26px;box-shadow:var(--shadow-lg);display:flex;flex-direction:column;justify-content:space-between;position:relative;overflow:hidden;min-height:188px;}
   .hero::after{content:"";position:absolute;right:-40px;top:-40px;width:200px;height:200px;border-radius:50%;background:rgba(255,255,255,.08);}
   .hero .h-label{font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.07em;opacity:.85;position:relative;}
   .hero .h-value{font-size:44px;font-weight:800;letter-spacing:-.03em;line-height:1;margin-top:8px;font-variant-numeric:tabular-nums;position:relative;}
@@ -337,7 +343,7 @@
     .cal-more{font-size:9px;}
   }
 </style>
-<script>(function(){try{var t=localStorage.getItem('glownest_theme');if(t!=='light'&&t!=='dark'){t=(window.matchMedia&&window.matchMedia('(prefers-color-scheme: light)').matches)?'light':'dark';}document.documentElement.setAttribute('data-theme',t);}catch(e){document.documentElement.setAttribute('data-theme','dark');}})();</script>
+<script>(function(){try{var t=localStorage.getItem('glownest_theme');if(t!=='light'&&t!=='dark'){t='light';}document.documentElement.setAttribute('data-theme',t);}catch(e){document.documentElement.setAttribute('data-theme','dark');}})();</script>
 </head>
 <body>
 <div class="app">
@@ -351,6 +357,7 @@
       <div class="nav-item" data-tab="income"><svg class="nav-ic" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 17 9 11 13 15 21 7"></polyline><polyline points="15 7 21 7 21 13"></polyline></svg><span class="label-text">Income</span><span class="label-short">Income</span></div>
       <div class="nav-item" data-tab="expenses"><svg class="nav-ic" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 3h14v18l-3-1.6-2 1.6-2-1.6-2 1.6L5 21V3z"></path><path d="M8.5 8h7M8.5 12h7M8.5 16h4"></path></svg><span class="label-text">Expenses</span><span class="label-short">Costs</span><span id="expenseNavBadge" class="nav-badge" style="display:none;"></span></div>
       <div class="nav-item nav-more" data-tab="investments"><svg class="nav-ic" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8l9-5 9 5v8l-9 5-9-5V8z"></path><path d="M3 8l9 5 9-5M12 13v8"></path></svg><span class="label-text">Investments</span><span class="label-short">Assets</span><span id="investmentNavBadge" class="nav-badge" style="display:none;"></span></div>
+      <div class="nav-item nav-more" data-tab="equipment"><svg class="nav-ic" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 7l-7 5 7 5V7z"></path><rect x="1" y="5" width="15" height="14" rx="2" ry="2"></rect></svg><span class="label-text">Equipment</span><span class="label-short">Gear</span></div>
       <div class="nav-item nav-more" data-tab="staff"><svg class="nav-ic" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3"></circle><path d="M3.5 20a5.5 5.5 0 0 1 11 0"></path><path d="M16 5.2a3 3 0 0 1 0 5.6M20.5 20a5.5 5.5 0 0 0-3.8-5.2"></path></svg><span class="label-text">Staff &amp; Salaries</span><span class="label-short">Staff</span></div>
       <div class="nav-item nav-more" data-tab="reports"><svg class="nav-ic" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18"></path><rect x="5" y="11" width="3" height="7" rx="1"></rect><rect x="10.5" y="6" width="3" height="12" rx="1"></rect><rect x="16" y="13" width="3" height="5" rx="1"></rect></svg><span class="label-text">Reports</span><span class="label-short">Reports</span></div>
       <div class="nav-item nav-more" data-tab="settings"><svg class="nav-ic" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M19.1 4.9L17 7M7 17l-2.1 2.1"></path></svg><span class="label-text">Backup / Settings</span><span class="label-short">Settings</span></div>
@@ -399,6 +406,7 @@ const STORAGE_KEY = 'streambiz_data_v1';
 // last option; "Salary" routes into the Staff/Salary Payments module
 // instead of a plain expense row (see expenseFormHtml/bindExpenseForm).
 const INCOME_CATEGORIES = ['Client Payment','YouTube AdSense','Sponsorship','Ticket Sales','Super Chat / Donations','Photography Charges','Rental Income','Other Income','Custom'];
+const EQUIPMENT_STATUSES = ['Available','Rented','In Repair'];
 const EXPENSE_CATEGORIES = ['DSLR Rent','Fuel Charges','Toll Charges','Travel','Equipment Rental','Venue / Permits','Editing / Post-production','Marketing','Internet / Data','Food & Accommodation','Software / Subscriptions','Salary','Misc','Custom'];
 // Used for Recurring/Monthly expense templates — same list minus "Salary"
 // (you pay crew per-event/ad-hoc, not on a fixed monthly schedule, so a
@@ -469,7 +477,7 @@ const DEFAULT_INVOICE_SETTINGS = {
 };
 function blankData(){
   return {
-    events:[], income:[], expenses:[], investments:[], staff:[], salaryPayments:[], recurringExpenses:[], bookings:[], canvaClients:[],
+    events:[], income:[], expenses:[], investments:[], staff:[], salaryPayments:[], recurringExpenses:[], bookings:[], canvaClients:[], equipment:[],
     settings:{youtubeApiKey:'', monthlyEventTarget:5, cloudSync:{...DEFAULT_CLOUD_SYNC}, sheetSync:{...DEFAULT_SHEET_SYNC}, calendarSync:{...DEFAULT_CALENDAR_SYNC}, invoiceSettings:{...DEFAULT_INVOICE_SETTINGS}},
     eventTypes:[], partners:[], updatedAt: null,
   };
@@ -485,6 +493,7 @@ function normalizeData(d){
   d.recurringExpenses ||= [];
   d.bookings ||= [];
   d.canvaClients ||= [];
+  d.equipment ||= [];
   // Earlier build of this feature stored posters as one flat list. Migrate
   // any of those into a single "General" client so nothing gets lost.
   if(d.canvaEdits && d.canvaEdits.length && !d.canvaClients.length){
@@ -1566,6 +1575,7 @@ function render(){
     case 'income': main.innerHTML = viewIncome(); wireIncome(); break;
     case 'expenses': main.innerHTML = viewExpenses(); wireExpenses(); break;
     case 'investments': main.innerHTML = viewInvestments(); wireInvestments(); break;
+    case 'equipment': main.innerHTML = viewEquipment(); wireEquipment(); break;
     case 'staff': main.innerHTML = viewStaff(); wireStaff(); break;
     case 'reports': main.innerHTML = viewReports(); wireReports(); break;
     case 'settings': main.innerHTML = viewSettings(); wireSettings(); break;
@@ -1666,6 +1676,20 @@ function staffOptionsHtml(selectedId){
 function staffName(id){
   const s = DATA.staff.find(x=>x.id===id);
   return s ? s.name : '—';
+}
+function equipmentOptionsHtml(selectedId){
+  return '<option value="">— none —</option>' + DATA.equipment
+    .slice().sort((a,b)=>a.name.localeCompare(b.name))
+    .map(e=>`<option value="${e.id}" ${e.id===selectedId?'selected':''}>${escapeHtml(e.name)}</option>`).join('');
+}
+function equipmentName(id){
+  const e = DATA.equipment.find(x=>x.id===id);
+  return e ? e.name : '—';
+}
+function equipmentStatusPillClass(status){
+  if(status==='Rented') return 'query';
+  if(status==='In Repair') return 'expense';
+  return 'income';
 }
 function partnerOptionsHtml(selected){
   const opts = DATA.partners.map(p=>p.name);
@@ -2109,15 +2133,15 @@ function viewDashboard(){
         </div>
       </div>
       <div class="side-stack">
-        <div class="card"><div class="label">Total Income · all time</div><div class="value pos">${fmt(inc)}</div></div>
-        <div class="card"><div class="label">Total Expenses · all time</div><div class="value neg">${fmt(exp+salPaid)}</div></div>
+        <div class="card"><div class="card-icon pos"><svg viewBox="0 0 24 24"><polyline points="3 17 9 11 13 15 21 7"></polyline><polyline points="15 7 21 7 21 13"></polyline></svg></div><div class="label">Total Income · all time</div><div class="value pos">${fmt(inc)}</div></div>
+        <div class="card"><div class="card-icon neg"><svg viewBox="0 0 24 24"><path d="M5 3h14v18l-3-1.6-2 1.6-2-1.6-2 1.6L5 21V3z"></path></svg></div><div class="label">Total Expenses · all time</div><div class="value neg">${fmt(exp+salPaid)}</div></div>
       </div>
     </div>
 
     <div class="kpi-row" style="grid-template-columns:repeat(3,1fr);">
-      <div class="card"><div class="label-row"><div class="label">This Month Income</div>${deltaChip(monthIncome, lmIncome)}</div><div class="value pos">${fmt(monthIncome)}</div></div>
-      <div class="card"><div class="label-row"><div class="label">This Month Expenses</div>${deltaChip(monthExpense+monthSalary, lmExpense)}</div><div class="value neg">${fmt(monthExpense+monthSalary)}</div></div>
-      <div class="card"><div class="label-row"><div class="label">This Month Net</div>${deltaChip(monthNet, lmNet)}</div><div class="value ${monthNet>=0?'pos':'neg'}">${fmt(monthNet)}</div></div>
+      <div class="card"><div class="card-icon pos"><svg viewBox="0 0 24 24"><polyline points="3 17 9 11 13 15 21 7"></polyline><polyline points="15 7 21 7 21 13"></polyline></svg></div><div class="label-row"><div class="label">This Month Income</div>${deltaChip(monthIncome, lmIncome)}</div><div class="value pos">${fmt(monthIncome)}</div></div>
+      <div class="card"><div class="card-icon neg"><svg viewBox="0 0 24 24"><path d="M5 3h14v18l-3-1.6-2 1.6-2-1.6-2 1.6L5 21V3z"></path></svg></div><div class="label-row"><div class="label">This Month Expenses</div>${deltaChip(monthExpense+monthSalary, lmExpense)}</div><div class="value neg">${fmt(monthExpense+monthSalary)}</div></div>
+      <div class="card"><div class="card-icon accent"><svg viewBox="0 0 24 24"><path d="M12 2v20M5 7l7-5 7 5M5 7a4 4 0 1 0 0 8M19 7a4 4 0 1 1 0 8"></path></svg></div><div class="label-row"><div class="label">This Month Net</div>${deltaChip(monthNet, lmNet)}</div><div class="value ${monthNet>=0?'pos':'neg'}">${fmt(monthNet)}</div></div>
     </div>
 
     <div class="panel">
@@ -2294,7 +2318,7 @@ function wireEvents(){
   document.querySelectorAll('[data-addincome]').forEach(btn=>{
     btn.onclick = ()=>{
       const ev = DATA.events.find(e=>e.id===btn.dataset.addincome);
-      const rec = {id:null,date:(ev&&ev.date)||todayStr(),category:INCOME_CATEGORIES[0],description:'',eventId:btn.dataset.addincome,amount:''};
+      const rec = {id:null,date:(ev&&ev.date)||todayStr(),category:INCOME_CATEGORIES[0],description:'',eventId:btn.dataset.addincome,amount:'',renterName:'',equipmentId:''};
       openModal(incomeFormHtml(rec, INCOME_CATEGORIES, true));
       bindIncomeForm(null);
     };
@@ -3147,6 +3171,114 @@ function bindCanvaLinkForm(clientId, link){
   };
 }
 
+
+// ============================================================
+// EQUIPMENT INVENTORY
+// Tracks gear you own (cameras, mics, lights, etc.) with a simple status
+// (Available / Rented / In Repair) plus earnings computed automatically
+// from any Rental Income entries linked to that item.
+// ============================================================
+function equipmentStats(id){
+  const rows = DATA.income.filter(r=>r.category==='Rental Income' && r.equipmentId===id);
+  const total = rows.reduce((s,r)=>s+(parseFloat(r.amount)||0),0);
+  let lastDate = '';
+  rows.forEach(r=>{ if(!lastDate || (r.date||'')>lastDate) lastDate = r.date||''; });
+  return { count: rows.length, total, lastDate };
+}
+function viewEquipment(){
+  const items = DATA.equipment.slice().sort((a,b)=>a.name.localeCompare(b.name));
+  return `
+    <h1>Equipment</h1>
+    <div class="subtitle">Cameras, mics, lights & other gear — status and rental earnings</div>
+    <div class="toolbar">
+      <div></div>
+      <button class="btn" id="addEquipmentBtn">+ Add Equipment</button>
+    </div>
+    <div class="panel">
+      ${items.length===0 ? '<div class="empty">No equipment added yet.</div>' : `
+      <table>
+        <tr><th>Name</th><th>Category</th><th>Status</th><th>Times Rented</th><th>Total Earned</th><th>Last Rented</th><th></th></tr>
+        ${items.map(e=>{
+          const stats = equipmentStats(e.id);
+          return `
+          <tr>
+            <td>${escapeHtml(e.name)}${e.notes?`<div class="note" style="margin-top:2px;">${escapeHtml(e.notes)}</div>`:''}</td>
+            <td>${escapeHtml(e.category||'—')}</td>
+            <td><span class="pill ${equipmentStatusPillClass(e.status)}">${escapeHtml(e.status||'Available')}</span></td>
+            <td>${stats.count}</td>
+            <td style="color:#3ecf8e">${fmt(stats.total)}</td>
+            <td>${stats.lastDate||'—'}</td>
+            <td class="row-actions">
+              <button class="btn small secondary" data-edit-equip="${e.id}">Edit</button>
+              <button class="btn danger" data-del-equip="${e.id}">Delete</button>
+            </td>
+          </tr>`;
+        }).join('')}
+      </table>`}
+    </div>
+  `;
+}
+function equipmentFormHtml(rec){
+  rec = rec || {id:null,name:'',category:'',status:EQUIPMENT_STATUSES[0],value:'',notes:''};
+  return `
+    <h3>${rec.id?'Edit Equipment':'Add Equipment'}</h3>
+    <div class="form-grid">
+      <div><label>Name</label><input id="f_name" value="${escapeHtml(rec.name)}" placeholder="e.g. Sony A7 III"></div>
+      <div><label>Category</label><input id="f_category" value="${escapeHtml(rec.category||'')}" placeholder="e.g. Camera, Mic, Light"></div>
+    </div>
+    <div class="form-grid">
+      <div><label>Status</label>
+        <select id="f_status">${EQUIPMENT_STATUSES.map(s=>`<option ${s===rec.status?'selected':''}>${s}</option>`).join('')}</select>
+      </div>
+      <div><label>Value (${CURRENCY}, optional)</label><input id="f_value" type="number" step="0.01" value="${rec.value||''}"></div>
+    </div>
+    <label>Notes</label>
+    <textarea id="f_notes" placeholder="e.g. Serial number, accessories included">${escapeHtml(rec.notes||'')}</textarea>
+    <div style="margin-top:16px;display:flex;gap:10px;justify-content:flex-end;">
+      <button class="btn secondary" id="cancelBtn">Cancel</button>
+      <button class="btn" id="saveBtn">Save</button>
+    </div>
+  `;
+}
+function wireEquipment(){
+  document.getElementById('addEquipmentBtn').onclick = ()=>{ openModal(equipmentFormHtml(null)); bindEquipmentForm(null); };
+  document.querySelectorAll('[data-edit-equip]').forEach(btn=>{
+    btn.onclick = ()=>{
+      const rec = DATA.equipment.find(e=>e.id===btn.dataset.editEquip);
+      openModal(equipmentFormHtml(rec)); bindEquipmentForm(rec);
+    };
+  });
+  document.querySelectorAll('[data-del-equip]').forEach(btn=>{
+    btn.onclick = ()=>{
+      if(confirm('Delete this equipment item? Past rental income entries linked to it will remain but show as unlinked.')){
+        DATA.equipment = DATA.equipment.filter(e=>e.id!==btn.dataset.delEquip);
+        save(); render();
+      }
+    };
+  });
+}
+function bindEquipmentForm(rec){
+  document.getElementById('cancelBtn').onclick = closeModal;
+  document.getElementById('saveBtn').onclick = ()=>{
+    const name = document.getElementById('f_name').value.trim();
+    if(!name){ alert('Please enter a name.'); return; }
+    const r = {
+      id: rec?rec.id:uid(),
+      name,
+      category: document.getElementById('f_category').value.trim(),
+      status: document.getElementById('f_status').value,
+      value: parseFloat(document.getElementById('f_value').value)||0,
+      notes: document.getElementById('f_notes').value,
+    };
+    stampAudit(r, rec);
+    if(rec){
+      const idx = DATA.equipment.findIndex(e=>e.id===rec.id);
+      DATA.equipment[idx] = r;
+    } else DATA.equipment.push(r);
+    save(); render();
+  };
+}
+
 // ============================================================
 // INCOME
 // ============================================================
@@ -3168,7 +3300,7 @@ function viewIncome(){
         ${rows.map(r=>`
           <tr>
             <td>${r.date||''}</td>
-            <td><span class="pill income">${escapeHtml(r.category)}</span>${r.category==='Rental Income' && r.renterName?`<div class="note" style="margin-top:2px;">Rented to: ${escapeHtml(r.renterName)}</div>`:''}</td>
+            <td><span class="pill income">${escapeHtml(r.category)}</span>${r.category==='Rental Income' && r.renterName?`<div class="note" style="margin-top:2px;">Rented to: ${escapeHtml(r.renterName)}</div>`:''}${r.category==='Rental Income' && r.equipmentId?`<div class="note" style="margin-top:2px;">Gear: ${escapeHtml(equipmentName(r.equipmentId))}</div>`:''}</td>
             <td>${escapeHtml(r.description||'')}${auditNote(r)?`<div class="note" style="margin-top:2px;">${escapeHtml(auditNote(r))}</div>`:''}</td>
             <td>${r.eventId?escapeHtml(eventName(r.eventId)):'—'}</td>
             <td style="color:#3ecf8e">${fmt(r.amount)}</td>
@@ -3215,13 +3347,38 @@ function rentalAnalysisHtml(){
         <td></td>
       </tr>
     </table>`}
+    <h3 style="margin-top:22px;">🎥 By Equipment</h3>
+    ${(()=>{
+      const byEquip = {};
+      rentals.forEach(r=>{
+        const key = r.equipmentId || '';
+        const label = key ? equipmentName(key) : 'Unspecified';
+        if(!byEquip[label]) byEquip[label] = {count:0, total:0, lastDate:''};
+        byEquip[label].count++;
+        byEquip[label].total += (parseFloat(r.amount)||0);
+        if(!byEquip[label].lastDate || (r.date||'') > byEquip[label].lastDate) byEquip[label].lastDate = r.date||'';
+      });
+      const equipNames = Object.keys(byEquip).sort((a,b)=>byEquip[b].total-byEquip[a].total);
+      if(equipNames.length===0) return '<div class="empty">No rental income logged yet.</div>';
+      return `<table>
+        <tr><th>Equipment</th><th>Times Rented</th><th>Total Earned</th><th>Last Rented</th></tr>
+        ${equipNames.map(name=>`
+          <tr>
+            <td>${escapeHtml(name)}</td>
+            <td>${byEquip[name].count}</td>
+            <td style="color:#3ecf8e">${fmt(byEquip[name].total)}</td>
+            <td>${byEquip[name].lastDate||'—'}</td>
+          </tr>
+        `).join('')}
+      </table>`;
+    })()}
     <div style="margin-top:16px;display:flex;justify-content:flex-end;">
       <button class="btn secondary" id="closeRentalAnalysisBtn">Close</button>
     </div>
   `;
 }
 function incomeFormHtml(rec, categories, lockDate){
-  rec = rec || {id:null,date:todayStr(),category:INCOME_CATEGORIES[0],description:'',eventId:'',amount:'',renterName:''};
+  rec = rec || {id:null,date:todayStr(),category:INCOME_CATEGORIES[0],description:'',eventId:'',amount:'',renterName:'',equipmentId:''};
   const cats = categories || INCOME_CATEGORIES;
   const hasCustom = cats.includes('Custom');
   const isCustomValue = hasCustom && rec.category && !cats.includes(rec.category);
@@ -3242,6 +3399,7 @@ function incomeFormHtml(rec, categories, lockDate){
     </div>` : ''}
     <div class="form-grid" id="f_renter_wrap" style="${isRental?'':'display:none;'}">
       <div><label>Rented To (name)</label><input id="f_renter" placeholder="e.g. Rahul" value="${escapeHtml(rec.renterName||'')}"></div>
+      <div><label>Equipment Rented (optional)</label><select id="f_equipment">${equipmentOptionsHtml(rec.equipmentId)}</select></div>
     </div>
     <div class="form-grid">
       <div><label>Related Event (optional)</label><select id="f_event">${eventOptionsHtml(rec.eventId)}</select></div>
@@ -3300,7 +3458,9 @@ function bindIncomeForm(rec){
       category = customVal;
     }
     const renterInput = document.getElementById('f_renter');
+    const equipmentInput = document.getElementById('f_equipment');
     const renterName = (category==='Rental Income' && renterInput) ? renterInput.value.trim() : '';
+    const equipmentId = (category==='Rental Income' && equipmentInput) ? equipmentInput.value : '';
     const r = {
       id: rec?rec.id:uid(),
       date: document.getElementById('f_date').value,
@@ -3309,6 +3469,7 @@ function bindIncomeForm(rec){
       eventId: document.getElementById('f_event').value,
       description: document.getElementById('f_desc').value,
       renterName,
+      equipmentId,
     };
     stampAudit(r, rec);
     if(rec){
