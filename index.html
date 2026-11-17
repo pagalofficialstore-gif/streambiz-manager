@@ -357,7 +357,6 @@
       <div class="nav-item" data-tab="income"><svg class="nav-ic" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 17 9 11 13 15 21 7"></polyline><polyline points="15 7 21 7 21 13"></polyline></svg><span class="label-text">Income</span><span class="label-short">Income</span></div>
       <div class="nav-item" data-tab="expenses"><svg class="nav-ic" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 3h14v18l-3-1.6-2 1.6-2-1.6-2 1.6L5 21V3z"></path><path d="M8.5 8h7M8.5 12h7M8.5 16h4"></path></svg><span class="label-text">Expenses</span><span class="label-short">Costs</span><span id="expenseNavBadge" class="nav-badge" style="display:none;"></span></div>
       <div class="nav-item nav-more" data-tab="investments"><svg class="nav-ic" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8l9-5 9 5v8l-9 5-9-5V8z"></path><path d="M3 8l9 5 9-5M12 13v8"></path></svg><span class="label-text">Investments</span><span class="label-short">Assets</span><span id="investmentNavBadge" class="nav-badge" style="display:none;"></span></div>
-      <div class="nav-item nav-more" data-tab="equipment"><svg class="nav-ic" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 7l-7 5 7 5V7z"></path><rect x="1" y="5" width="15" height="14" rx="2" ry="2"></rect></svg><span class="label-text">Equipment</span><span class="label-short">Gear</span></div>
       <div class="nav-item nav-more" data-tab="staff"><svg class="nav-ic" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3"></circle><path d="M3.5 20a5.5 5.5 0 0 1 11 0"></path><path d="M16 5.2a3 3 0 0 1 0 5.6M20.5 20a5.5 5.5 0 0 0-3.8-5.2"></path></svg><span class="label-text">Staff &amp; Salaries</span><span class="label-short">Staff</span></div>
       <div class="nav-item nav-more" data-tab="reports"><svg class="nav-ic" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18"></path><rect x="5" y="11" width="3" height="7" rx="1"></rect><rect x="10.5" y="6" width="3" height="12" rx="1"></rect><rect x="16" y="13" width="3" height="5" rx="1"></rect></svg><span class="label-text">Reports</span><span class="label-short">Reports</span></div>
       <div class="nav-item nav-more" data-tab="settings"><svg class="nav-ic" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M19.1 4.9L17 7M7 17l-2.1 2.1"></path></svg><span class="label-text">Backup / Settings</span><span class="label-short">Settings</span></div>
@@ -406,7 +405,6 @@ const STORAGE_KEY = 'streambiz_data_v1';
 // last option; "Salary" routes into the Staff/Salary Payments module
 // instead of a plain expense row (see expenseFormHtml/bindExpenseForm).
 const INCOME_CATEGORIES = ['Client Payment','YouTube AdSense','Sponsorship','Ticket Sales','Super Chat / Donations','Photography Charges','Rental Income','Other Income','Custom'];
-const EQUIPMENT_STATUSES = ['Available','Rented','In Repair'];
 const EXPENSE_CATEGORIES = ['DSLR Rent','Fuel Charges','Toll Charges','Travel','Equipment Rental','Venue / Permits','Editing / Post-production','Marketing','Internet / Data','Food & Accommodation','Software / Subscriptions','Salary','Misc','Custom'];
 // Used for Recurring/Monthly expense templates — same list minus "Salary"
 // (you pay crew per-event/ad-hoc, not on a fixed monthly schedule, so a
@@ -477,7 +475,7 @@ const DEFAULT_INVOICE_SETTINGS = {
 };
 function blankData(){
   return {
-    events:[], income:[], expenses:[], investments:[], staff:[], salaryPayments:[], recurringExpenses:[], bookings:[], canvaClients:[], equipment:[],
+    events:[], income:[], expenses:[], investments:[], staff:[], salaryPayments:[], recurringExpenses:[], bookings:[], canvaClients:[],
     settings:{youtubeApiKey:'', monthlyEventTarget:5, cloudSync:{...DEFAULT_CLOUD_SYNC}, sheetSync:{...DEFAULT_SHEET_SYNC}, calendarSync:{...DEFAULT_CALENDAR_SYNC}, invoiceSettings:{...DEFAULT_INVOICE_SETTINGS}},
     eventTypes:[], partners:[], updatedAt: null,
   };
@@ -493,7 +491,6 @@ function normalizeData(d){
   d.recurringExpenses ||= [];
   d.bookings ||= [];
   d.canvaClients ||= [];
-  d.equipment ||= [];
   // Earlier build of this feature stored posters as one flat list. Migrate
   // any of those into a single "General" client so nothing gets lost.
   if(d.canvaEdits && d.canvaEdits.length && !d.canvaClients.length){
@@ -1575,7 +1572,6 @@ function render(){
     case 'income': main.innerHTML = viewIncome(); wireIncome(); break;
     case 'expenses': main.innerHTML = viewExpenses(); wireExpenses(); break;
     case 'investments': main.innerHTML = viewInvestments(); wireInvestments(); break;
-    case 'equipment': main.innerHTML = viewEquipment(); wireEquipment(); break;
     case 'staff': main.innerHTML = viewStaff(); wireStaff(); break;
     case 'reports': main.innerHTML = viewReports(); wireReports(); break;
     case 'settings': main.innerHTML = viewSettings(); wireSettings(); break;
@@ -1676,20 +1672,6 @@ function staffOptionsHtml(selectedId){
 function staffName(id){
   const s = DATA.staff.find(x=>x.id===id);
   return s ? s.name : '—';
-}
-function equipmentOptionsHtml(selectedId){
-  return '<option value="">— none —</option>' + DATA.equipment
-    .slice().sort((a,b)=>a.name.localeCompare(b.name))
-    .map(e=>`<option value="${e.id}" ${e.id===selectedId?'selected':''}>${escapeHtml(e.name)}</option>`).join('');
-}
-function equipmentName(id){
-  const e = DATA.equipment.find(x=>x.id===id);
-  return e ? e.name : '—';
-}
-function equipmentStatusPillClass(status){
-  if(status==='Rented') return 'query';
-  if(status==='In Repair') return 'expense';
-  return 'income';
 }
 function partnerOptionsHtml(selected){
   const opts = DATA.partners.map(p=>p.name);
@@ -2318,7 +2300,7 @@ function wireEvents(){
   document.querySelectorAll('[data-addincome]').forEach(btn=>{
     btn.onclick = ()=>{
       const ev = DATA.events.find(e=>e.id===btn.dataset.addincome);
-      const rec = {id:null,date:(ev&&ev.date)||todayStr(),category:INCOME_CATEGORIES[0],description:'',eventId:btn.dataset.addincome,amount:'',renterName:'',equipmentId:''};
+      const rec = {id:null,date:(ev&&ev.date)||todayStr(),category:INCOME_CATEGORIES[0],description:'',eventId:btn.dataset.addincome,amount:'',renterName:''};
       openModal(incomeFormHtml(rec, INCOME_CATEGORIES, true));
       bindIncomeForm(null);
     };
@@ -3173,113 +3155,6 @@ function bindCanvaLinkForm(clientId, link){
 
 
 // ============================================================
-// EQUIPMENT INVENTORY
-// Tracks gear you own (cameras, mics, lights, etc.) with a simple status
-// (Available / Rented / In Repair) plus earnings computed automatically
-// from any Rental Income entries linked to that item.
-// ============================================================
-function equipmentStats(id){
-  const rows = DATA.income.filter(r=>r.category==='Rental Income' && r.equipmentId===id);
-  const total = rows.reduce((s,r)=>s+(parseFloat(r.amount)||0),0);
-  let lastDate = '';
-  rows.forEach(r=>{ if(!lastDate || (r.date||'')>lastDate) lastDate = r.date||''; });
-  return { count: rows.length, total, lastDate };
-}
-function viewEquipment(){
-  const items = DATA.equipment.slice().sort((a,b)=>a.name.localeCompare(b.name));
-  return `
-    <h1>Equipment</h1>
-    <div class="subtitle">Cameras, mics, lights & other gear — status and rental earnings</div>
-    <div class="toolbar">
-      <div></div>
-      <button class="btn" id="addEquipmentBtn">+ Add Equipment</button>
-    </div>
-    <div class="panel">
-      ${items.length===0 ? '<div class="empty">No equipment added yet.</div>' : `
-      <table>
-        <tr><th>Name</th><th>Category</th><th>Status</th><th>Times Rented</th><th>Total Earned</th><th>Last Rented</th><th></th></tr>
-        ${items.map(e=>{
-          const stats = equipmentStats(e.id);
-          return `
-          <tr>
-            <td>${escapeHtml(e.name)}${e.notes?`<div class="note" style="margin-top:2px;">${escapeHtml(e.notes)}</div>`:''}</td>
-            <td>${escapeHtml(e.category||'—')}</td>
-            <td><span class="pill ${equipmentStatusPillClass(e.status)}">${escapeHtml(e.status||'Available')}</span></td>
-            <td>${stats.count}</td>
-            <td style="color:#3ecf8e">${fmt(stats.total)}</td>
-            <td>${stats.lastDate||'—'}</td>
-            <td class="row-actions">
-              <button class="btn small secondary" data-edit-equip="${e.id}">Edit</button>
-              <button class="btn danger" data-del-equip="${e.id}">Delete</button>
-            </td>
-          </tr>`;
-        }).join('')}
-      </table>`}
-    </div>
-  `;
-}
-function equipmentFormHtml(rec){
-  rec = rec || {id:null,name:'',category:'',status:EQUIPMENT_STATUSES[0],value:'',notes:''};
-  return `
-    <h3>${rec.id?'Edit Equipment':'Add Equipment'}</h3>
-    <div class="form-grid">
-      <div><label>Name</label><input id="f_name" value="${escapeHtml(rec.name)}" placeholder="e.g. Sony A7 III"></div>
-      <div><label>Category</label><input id="f_category" value="${escapeHtml(rec.category||'')}" placeholder="e.g. Camera, Mic, Light"></div>
-    </div>
-    <div class="form-grid">
-      <div><label>Status</label>
-        <select id="f_status">${EQUIPMENT_STATUSES.map(s=>`<option ${s===rec.status?'selected':''}>${s}</option>`).join('')}</select>
-      </div>
-      <div><label>Value (${CURRENCY}, optional)</label><input id="f_value" type="number" step="0.01" value="${rec.value||''}"></div>
-    </div>
-    <label>Notes</label>
-    <textarea id="f_notes" placeholder="e.g. Serial number, accessories included">${escapeHtml(rec.notes||'')}</textarea>
-    <div style="margin-top:16px;display:flex;gap:10px;justify-content:flex-end;">
-      <button class="btn secondary" id="cancelBtn">Cancel</button>
-      <button class="btn" id="saveBtn">Save</button>
-    </div>
-  `;
-}
-function wireEquipment(){
-  document.getElementById('addEquipmentBtn').onclick = ()=>{ openModal(equipmentFormHtml(null)); bindEquipmentForm(null); };
-  document.querySelectorAll('[data-edit-equip]').forEach(btn=>{
-    btn.onclick = ()=>{
-      const rec = DATA.equipment.find(e=>e.id===btn.dataset.editEquip);
-      openModal(equipmentFormHtml(rec)); bindEquipmentForm(rec);
-    };
-  });
-  document.querySelectorAll('[data-del-equip]').forEach(btn=>{
-    btn.onclick = ()=>{
-      if(confirm('Delete this equipment item? Past rental income entries linked to it will remain but show as unlinked.')){
-        DATA.equipment = DATA.equipment.filter(e=>e.id!==btn.dataset.delEquip);
-        save(); render();
-      }
-    };
-  });
-}
-function bindEquipmentForm(rec){
-  document.getElementById('cancelBtn').onclick = closeModal;
-  document.getElementById('saveBtn').onclick = ()=>{
-    const name = document.getElementById('f_name').value.trim();
-    if(!name){ alert('Please enter a name.'); return; }
-    const r = {
-      id: rec?rec.id:uid(),
-      name,
-      category: document.getElementById('f_category').value.trim(),
-      status: document.getElementById('f_status').value,
-      value: parseFloat(document.getElementById('f_value').value)||0,
-      notes: document.getElementById('f_notes').value,
-    };
-    stampAudit(r, rec);
-    if(rec){
-      const idx = DATA.equipment.findIndex(e=>e.id===rec.id);
-      DATA.equipment[idx] = r;
-    } else DATA.equipment.push(r);
-    save(); render();
-  };
-}
-
-// ============================================================
 // INCOME
 // ============================================================
 function viewIncome(){
@@ -3300,7 +3175,7 @@ function viewIncome(){
         ${rows.map(r=>`
           <tr>
             <td>${r.date||''}</td>
-            <td><span class="pill income">${escapeHtml(r.category)}</span>${r.category==='Rental Income' && r.renterName?`<div class="note" style="margin-top:2px;">Rented to: ${escapeHtml(r.renterName)}</div>`:''}${r.category==='Rental Income' && r.equipmentId?`<div class="note" style="margin-top:2px;">Gear: ${escapeHtml(equipmentName(r.equipmentId))}</div>`:''}</td>
+            <td><span class="pill income">${escapeHtml(r.category)}</span>${r.category==='Rental Income' && r.renterName?`<div class="note" style="margin-top:2px;">Rented to: ${escapeHtml(r.renterName)}</div>`:''}</td>
             <td>${escapeHtml(r.description||'')}${auditNote(r)?`<div class="note" style="margin-top:2px;">${escapeHtml(auditNote(r))}</div>`:''}</td>
             <td>${r.eventId?escapeHtml(eventName(r.eventId)):'—'}</td>
             <td style="color:#3ecf8e">${fmt(r.amount)}</td>
@@ -3347,38 +3222,13 @@ function rentalAnalysisHtml(){
         <td></td>
       </tr>
     </table>`}
-    <h3 style="margin-top:22px;">🎥 By Equipment</h3>
-    ${(()=>{
-      const byEquip = {};
-      rentals.forEach(r=>{
-        const key = r.equipmentId || '';
-        const label = key ? equipmentName(key) : 'Unspecified';
-        if(!byEquip[label]) byEquip[label] = {count:0, total:0, lastDate:''};
-        byEquip[label].count++;
-        byEquip[label].total += (parseFloat(r.amount)||0);
-        if(!byEquip[label].lastDate || (r.date||'') > byEquip[label].lastDate) byEquip[label].lastDate = r.date||'';
-      });
-      const equipNames = Object.keys(byEquip).sort((a,b)=>byEquip[b].total-byEquip[a].total);
-      if(equipNames.length===0) return '<div class="empty">No rental income logged yet.</div>';
-      return `<table>
-        <tr><th>Equipment</th><th>Times Rented</th><th>Total Earned</th><th>Last Rented</th></tr>
-        ${equipNames.map(name=>`
-          <tr>
-            <td>${escapeHtml(name)}</td>
-            <td>${byEquip[name].count}</td>
-            <td style="color:#3ecf8e">${fmt(byEquip[name].total)}</td>
-            <td>${byEquip[name].lastDate||'—'}</td>
-          </tr>
-        `).join('')}
-      </table>`;
-    })()}
     <div style="margin-top:16px;display:flex;justify-content:flex-end;">
       <button class="btn secondary" id="closeRentalAnalysisBtn">Close</button>
     </div>
   `;
 }
 function incomeFormHtml(rec, categories, lockDate){
-  rec = rec || {id:null,date:todayStr(),category:INCOME_CATEGORIES[0],description:'',eventId:'',amount:'',renterName:'',equipmentId:''};
+  rec = rec || {id:null,date:todayStr(),category:INCOME_CATEGORIES[0],description:'',eventId:'',amount:'',renterName:''};
   const cats = categories || INCOME_CATEGORIES;
   const hasCustom = cats.includes('Custom');
   const isCustomValue = hasCustom && rec.category && !cats.includes(rec.category);
@@ -3399,7 +3249,6 @@ function incomeFormHtml(rec, categories, lockDate){
     </div>` : ''}
     <div class="form-grid" id="f_renter_wrap" style="${isRental?'':'display:none;'}">
       <div><label>Rented To (name)</label><input id="f_renter" placeholder="e.g. Rahul" value="${escapeHtml(rec.renterName||'')}"></div>
-      <div><label>Equipment Rented (optional)</label><select id="f_equipment">${equipmentOptionsHtml(rec.equipmentId)}</select></div>
     </div>
     <div class="form-grid">
       <div><label>Related Event (optional)</label><select id="f_event">${eventOptionsHtml(rec.eventId)}</select></div>
@@ -3458,9 +3307,7 @@ function bindIncomeForm(rec){
       category = customVal;
     }
     const renterInput = document.getElementById('f_renter');
-    const equipmentInput = document.getElementById('f_equipment');
     const renterName = (category==='Rental Income' && renterInput) ? renterInput.value.trim() : '';
-    const equipmentId = (category==='Rental Income' && equipmentInput) ? equipmentInput.value : '';
     const r = {
       id: rec?rec.id:uid(),
       date: document.getElementById('f_date').value,
@@ -3469,7 +3316,6 @@ function bindIncomeForm(rec){
       eventId: document.getElementById('f_event').value,
       description: document.getElementById('f_desc').value,
       renterName,
-      equipmentId,
     };
     stampAudit(r, rec);
     if(rec){
