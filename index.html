@@ -398,7 +398,7 @@ const STORAGE_KEY = 'streambiz_data_v1';
 // which page you're adding from. "Custom" (type your own) is always the
 // last option; "Salary" routes into the Staff/Salary Payments module
 // instead of a plain expense row (see expenseFormHtml/bindExpenseForm).
-const INCOME_CATEGORIES = ['Client Payment','YouTube AdSense','Sponsorship','Ticket Sales','Super Chat / Donations','Photography Charges','Other Income','Custom'];
+const INCOME_CATEGORIES = ['Client Payment','YouTube AdSense','Sponsorship','Ticket Sales','Super Chat / Donations','Photography Charges','Rental Income','Other Income','Custom'];
 const EXPENSE_CATEGORIES = ['DSLR Rent','Fuel Charges','Toll Charges','Travel','Equipment Rental','Venue / Permits','Editing / Post-production','Marketing','Internet / Data','Food & Accommodation','Software / Subscriptions','Salary','Misc','Custom'];
 // Used for Recurring/Monthly expense templates — same list minus "Salary"
 // (you pay crew per-event/ad-hoc, not on a fixed monthly schedule, so a
@@ -452,7 +452,7 @@ const DEFAULT_SHEET_SYNC = { url: '', enabled: false };
 // Bookings are internal-only date holds (not customer-facing) that
 // optionally push one-way to Google Calendar via the same Apps Script
 // Web App already used for the Sheets backup — no separate setup needed.
-const DEFAULT_CALENDAR_SYNC = { enabled: false };
+const DEFAULT_CALENDAR_SYNC = { enabled: false, syncEvents: false };
 // Business/payment details printed on every generated invoice — filled in
 // once via Settings and reused every time. All optional except businessName;
 // blank fields are simply omitted from the printed invoice. Note: generated
@@ -809,6 +809,77 @@ async function syncBookingToCalendar(booking, op){
     console.warn('Calendar sync failed', e);
     return false;
   }
+}
+
+// ============================================================
+// EVENTS → Google Calendar "Completed" sync. Any Event that has a
+// YouTube link is, by definition, an already-completed livestream —
+// so it gets pushed to the same Google Calendar as a green "Completed"
+// all-day event on that event's date, separate from Bookings (which
+// are future holds). Toggle lives in Settings as its own checkbox
+// (DATA.settings.calendarSync.syncEvents) so it can be on/off
+// independently of booking sync, while reusing the same Apps Script
+// Web App URL/connection.
+// ============================================================
+function calendarEventSyncEnabled(){
+  return !!(DATA.settings && DATA.settings.calendarSync && DATA.settings.calendarSync.syncEvents);
+}
+async function syncEventToCalendar(ev, op){
+  if(!calendarEventSyncEnabled() || !calendarSyncConfigured()) return false;
+  try{
+    const res = await fetchWithTimeout(DATA.settings.sheetSync.url, 15000, {
+      method:'POST',
+      headers:{'Content-Type':'text/plain;charset=utf-8'},
+      body: JSON.stringify({
+        action:'event',
+        op,
+        calendarEventId: ev.calendarEventId || null,
+        event:{
+          name: ev.name,
+          date: ev.date,
+          type: ev.type,
+          location: ev.location,
+          youtubeUrl: ev.youtubeUrl,
+          channelName: ev.channelName,
+          notes: ev.notes,
+        },
+      }),
+    });
+    if(!res.ok) throw new Error('HTTP ' + res.status);
+    const json = await res.json();
+    if(!json || !json.ok) throw new Error((json&&json.error)||'Unknown error');
+    if(op==='delete'){
+      ev.calendarEventId = null;
+    } else if(json.calendarEventId){
+      ev.calendarEventId = json.calendarEventId;
+    }
+    ev.calendarSyncStatus = 'synced';
+    ev.calendarSyncedAt = Date.now();
+    return true;
+  }catch(e){
+    ev.calendarSyncStatus = 'failed';
+    console.warn('Event calendar sync failed', e);
+    return false;
+  }
+}
+// One-time/manual backfill: walks every Event that has a YouTube link
+// (past AND future alike — there's no date filtering here on purpose)
+// and pushes/updates each one on Google Calendar as a green Completed
+// event. Called from the Settings button, and safe to re-run any time
+// (it reuses each event's stored calendarEventId so it updates rather
+// than duplicates). Staggers calls slightly to be gentle on the Apps
+// Script quota when there are many events.
+async function backfillEventsToCalendar(onProgress){
+  const targets = DATA.events.filter(e=>e.youtubeUrl && e.youtubeUrl.trim());
+  let done = 0, failed = 0;
+  for(const ev of targets){
+    const ok = await syncEventToCalendar(ev, ev.calendarEventId ? 'update' : 'create');
+    if(ok) done++; else failed++;
+    if(onProgress) onProgress(done+failed, targets.length);
+    await new Promise(r=>setTimeout(r, 150));
+  }
+  save();
+  return { total: targets.length, done, failed };
 }
 
 // ============================================================
@@ -2399,7 +2470,7 @@ function bindEventForm(ev){
       btn.disabled = false; btn.textContent = 'Fetch Details';
     }
   };
-  document.getElementById('saveBtn').onclick = ()=>{
+  document.getElementById('saveBtn').onclick = async ()=>{
     const name = document.getElementById('f_name').value.trim();
     if(!name){ alert('Please enter an event name.'); return; }
     const rec = {
@@ -2412,8 +2483,13 @@ function bindEventForm(ev){
       thumbnailUrl: document.getElementById('f_thumb').value,
       channelName: document.getElementById('f_channel').value,
       location: document.getElementById('f_location').value.trim(),
+      calendarEventId: ev ? (ev.calendarEventId || null) : null,
+      calendarSyncStatus: ev ? ev.calendarSyncStatus : undefined,
+      calendarSyncedAt: ev ? ev.calendarSyncedAt : undefined,
     };
     stampAudit(rec, ev);
+    const hadYoutube = !!(ev && ev.youtubeUrl && ev.youtubeUrl.trim());
+    const hasYoutube = !!(rec.youtubeUrl && rec.youtubeUrl.trim());
     if(ev){
       const idx = DATA.events.findIndex(e=>e.id===ev.id);
       DATA.events[idx] = rec;
@@ -2421,6 +2497,16 @@ function bindEventForm(ev){
       DATA.events.push(rec);
     }
     save(); closeModal(); render();
+    // A completed-event calendar sync, if enabled: pushing a green
+    // "Completed" event when a YouTube link is present/added, updating
+    // it on any edit, and removing it if the YouTube link is cleared.
+    if(hasYoutube){
+      await syncEventToCalendar(rec, rec.calendarEventId ? 'update' : 'create');
+      save();
+    } else if(hadYoutube && rec.calendarEventId){
+      await syncEventToCalendar(rec, 'delete');
+      save();
+    }
   };
 }
 
@@ -3072,6 +3158,7 @@ function viewIncome(){
     <div class="subtitle">YouTube revenue, sponsorships, ticket sales & more</div>
     <div class="toolbar">
       <div class="card" style="margin:0;"><div class="label">Total Income</div><div class="value pos">${fmt(total)}</div></div>
+      <button class="btn secondary" id="rentalAnalysisBtn">📊 Rental Analysis</button>
       <button class="btn" id="addIncomeBtn">+ Add Income</button>
     </div>
     <div class="panel">
@@ -3081,7 +3168,7 @@ function viewIncome(){
         ${rows.map(r=>`
           <tr>
             <td>${r.date||''}</td>
-            <td><span class="pill income">${escapeHtml(r.category)}</span></td>
+            <td><span class="pill income">${escapeHtml(r.category)}</span>${r.category==='Rental Income' && r.renterName?`<div class="note" style="margin-top:2px;">Rented to: ${escapeHtml(r.renterName)}</div>`:''}</td>
             <td>${escapeHtml(r.description||'')}${auditNote(r)?`<div class="note" style="margin-top:2px;">${escapeHtml(auditNote(r))}</div>`:''}</td>
             <td>${r.eventId?escapeHtml(eventName(r.eventId)):'—'}</td>
             <td style="color:#3ecf8e">${fmt(r.amount)}</td>
@@ -3095,11 +3182,50 @@ function viewIncome(){
     </div>
   `;
 }
+function rentalAnalysisHtml(){
+  const rentals = DATA.income.filter(r=>r.category==='Rental Income');
+  const byRenter = {};
+  rentals.forEach(r=>{
+    const name = (r.renterName||'').trim() || 'Unnamed';
+    if(!byRenter[name]) byRenter[name] = {count:0, total:0, lastDate:''};
+    byRenter[name].count++;
+    byRenter[name].total += (parseFloat(r.amount)||0);
+    if(!byRenter[name].lastDate || (r.date||'') > byRenter[name].lastDate) byRenter[name].lastDate = r.date||'';
+  });
+  const names = Object.keys(byRenter).sort((a,b)=>byRenter[b].total-byRenter[a].total);
+  const grandTotal = rentals.reduce((s,r)=>s+(parseFloat(r.amount)||0),0);
+  return `
+    <h3>📊 Rental Income Analysis</h3>
+    <div class="subtitle">Who's renting cameras/equipment, how often, and how much</div>
+    ${names.length===0 ? '<div class="empty">No rental income logged yet.</div>' : `
+    <table>
+      <tr><th>Renter</th><th>Times Rented</th><th>Total Paid</th><th>Last Rented</th></tr>
+      ${names.map(name=>`
+        <tr>
+          <td>${escapeHtml(name)}</td>
+          <td>${byRenter[name].count}</td>
+          <td style="color:#3ecf8e">${fmt(byRenter[name].total)}</td>
+          <td>${byRenter[name].lastDate||'—'}</td>
+        </tr>
+      `).join('')}
+      <tr style="font-weight:600;">
+        <td>Total</td>
+        <td>${rentals.length}</td>
+        <td style="color:#3ecf8e">${fmt(grandTotal)}</td>
+        <td></td>
+      </tr>
+    </table>`}
+    <div style="margin-top:16px;display:flex;justify-content:flex-end;">
+      <button class="btn secondary" id="closeRentalAnalysisBtn">Close</button>
+    </div>
+  `;
+}
 function incomeFormHtml(rec, categories, lockDate){
-  rec = rec || {id:null,date:todayStr(),category:INCOME_CATEGORIES[0],description:'',eventId:'',amount:''};
+  rec = rec || {id:null,date:todayStr(),category:INCOME_CATEGORIES[0],description:'',eventId:'',amount:'',renterName:''};
   const cats = categories || INCOME_CATEGORIES;
   const hasCustom = cats.includes('Custom');
   const isCustomValue = hasCustom && rec.category && !cats.includes(rec.category);
+  const isRental = rec.category === 'Rental Income';
   return `
     <h3>${rec.id?'Edit Income':'Add Income'}</h3>
     <div class="form-grid">
@@ -3114,6 +3240,9 @@ function incomeFormHtml(rec, categories, lockDate){
     ${hasCustom ? `<div class="form-grid" id="f_cat_custom_wrap" style="${isCustomValue?'':'display:none;'}">
       <div><label>Custom Category</label><input id="f_cat_custom" placeholder="Type a category" value="${isCustomValue?escapeHtml(rec.category):''}"></div>
     </div>` : ''}
+    <div class="form-grid" id="f_renter_wrap" style="${isRental?'':'display:none;'}">
+      <div><label>Rented To (name)</label><input id="f_renter" placeholder="e.g. Rahul" value="${escapeHtml(rec.renterName||'')}"></div>
+    </div>
     <div class="form-grid">
       <div><label>Related Event (optional)</label><select id="f_event">${eventOptionsHtml(rec.eventId)}</select></div>
     </div>
@@ -3127,6 +3256,12 @@ function incomeFormHtml(rec, categories, lockDate){
 }
 function wireIncome(){
   document.getElementById('addIncomeBtn').onclick = ()=>{ openModal(incomeFormHtml(null)); bindIncomeForm(null); };
+  const rentalBtn = document.getElementById('rentalAnalysisBtn');
+  if(rentalBtn) rentalBtn.onclick = ()=>{
+    openModal(rentalAnalysisHtml());
+    const closeBtn = document.getElementById('closeRentalAnalysisBtn');
+    if(closeBtn) closeBtn.onclick = closeModal;
+  };
   document.querySelectorAll('[data-edit]').forEach(btn=>{
     btn.onclick = ()=>{
       const rec = DATA.income.find(e=>e.id===btn.dataset.edit);
@@ -3146,8 +3281,13 @@ function bindIncomeForm(rec){
   document.getElementById('cancelBtn').onclick = closeModal;
   const catSel = document.getElementById('f_cat');
   const customWrap = document.getElementById('f_cat_custom_wrap');
+  const renterWrap = document.getElementById('f_renter_wrap');
   if(catSel && customWrap){
     catSel.onchange = ()=>{ customWrap.style.display = catSel.value==='Custom' ? '' : 'none'; };
+  }
+  if(catSel && renterWrap){
+    const syncRenterVisibility = ()=>{ renterWrap.style.display = catSel.value==='Rental Income' ? '' : 'none'; };
+    catSel.addEventListener('change', syncRenterVisibility);
   }
   document.getElementById('saveBtn').onclick = ()=>{
     const amount = parseFloat(document.getElementById('f_amount').value);
@@ -3159,6 +3299,8 @@ function bindIncomeForm(rec){
       if(!customVal){ alert('Please type a custom category.'); return; }
       category = customVal;
     }
+    const renterInput = document.getElementById('f_renter');
+    const renterName = (category==='Rental Income' && renterInput) ? renterInput.value.trim() : '';
     const r = {
       id: rec?rec.id:uid(),
       date: document.getElementById('f_date').value,
@@ -3166,6 +3308,7 @@ function bindIncomeForm(rec){
       amount,
       eventId: document.getElementById('f_event').value,
       description: document.getElementById('f_desc').value,
+      renterName,
     };
     stampAudit(r, rec);
     if(rec){
@@ -4945,6 +5088,25 @@ function viewSettings(){
       <div class="note" id="calendarSyncStatus" style="margin-top:8px;">${calendarSyncEnabled() ? 'Calendar sync is on.' : 'Calendar sync is off.'}</div>
     </div>
     <div class="panel">
+      <h2>Completed Events → Google Calendar Sync</h2>
+      <p style="color:var(--muted);font-size:13.5px;">
+        Any Event with a YouTube link is treated as an already-completed livestream. When this is on, it's pushed
+        automatically to your default Google Calendar as a green "✅ Completed" all-day event on that event's date —
+        both when you add a new event with a link, and whenever you edit one (removing the link removes the
+        calendar event too). Reuses the same Apps Script Web App URL above.
+      </p>
+      <div style="margin-top:10px;display:flex;align-items:center;gap:8px;">
+        <input type="checkbox" id="calendarEventSyncEnabled" ${calendarEventSyncEnabled()?'checked':''} style="width:auto;">
+        <label for="calendarEventSyncEnabled" style="margin:0;">Sync completed events (with YouTube link) to Google Calendar</label>
+      </div>
+      <div class="backup-box" style="margin-top:12px;">
+        <button class="btn" id="saveEventCalendarSync">Save</button>
+        <button class="btn secondary" id="backfillEventCalendarBtn">Sync all completed events now</button>
+      </div>
+      <div class="note" id="calendarEventSyncStatus" style="margin-top:8px;">${calendarEventSyncEnabled() ? 'Completed-events sync is on.' : 'Completed-events sync is off.'}</div>
+      <div class="note" id="calendarEventBackfillStatus" style="margin-top:4px;"></div>
+    </div>
+    <div class="panel">
       <h2>Invoice Details</h2>
       <p style="color:var(--muted);font-size:13.5px;">
         These details print on every invoice you generate from an event's "🧾 Invoice" button. Leave anything
@@ -5159,11 +5321,50 @@ function wireSettings(){
       alert('Paste your Apps Script Web App URL above (Google Sheets Backup section) and click Save there first — Calendar sync reuses that same connection.');
       return;
     }
-    DATA.settings.calendarSync = { enabled };
+    DATA.settings.calendarSync = { ...DATA.settings.calendarSync, enabled };
     save();
     const statusEl = document.getElementById('calendarSyncStatus');
     if(statusEl) statusEl.textContent = enabled ? 'Calendar sync is on.' : 'Calendar sync is off.';
     alert('Calendar sync setting saved.');
+  };
+  document.getElementById('saveEventCalendarSync').onclick = ()=>{
+    const syncEvents = document.getElementById('calendarEventSyncEnabled').checked;
+    if(syncEvents && !calendarSyncConfigured()){
+      alert('Paste your Apps Script Web App URL above (Google Sheets Backup section) and click Save there first — Calendar sync reuses that same connection.');
+      return;
+    }
+    DATA.settings.calendarSync = { ...DATA.settings.calendarSync, syncEvents };
+    save();
+    const statusEl = document.getElementById('calendarEventSyncStatus');
+    if(statusEl) statusEl.textContent = syncEvents ? 'Completed-events sync is on.' : 'Completed-events sync is off.';
+    alert('Completed-events calendar sync setting saved.');
+  };
+  document.getElementById('backfillEventCalendarBtn').onclick = async ()=>{
+    if(!calendarSyncConfigured()){
+      alert('Paste your Apps Script Web App URL above (Google Sheets Backup section) and click Save there first.');
+      return;
+    }
+    if(!calendarEventSyncEnabled()){
+      alert('Turn on "Sync completed events to Google Calendar" above and click Save first, then run this.');
+      return;
+    }
+    const btn = document.getElementById('backfillEventCalendarBtn');
+    const statusEl = document.getElementById('calendarEventBackfillStatus');
+    const targets = DATA.events.filter(e=>e.youtubeUrl && e.youtubeUrl.trim());
+    if(targets.length===0){
+      if(statusEl) statusEl.textContent = 'No events with a YouTube link found yet.';
+      return;
+    }
+    btn.disabled = true; btn.textContent = 'Syncing…';
+    const result = await backfillEventsToCalendar((n,total)=>{
+      if(statusEl) statusEl.textContent = `Syncing ${n} / ${total}…`;
+    });
+    btn.disabled = false; btn.textContent = 'Sync all completed events now';
+    if(statusEl){
+      statusEl.textContent = result.failed
+        ? `Synced ${result.done} of ${result.total} (${result.failed} failed — try again).`
+        : `All ${result.done} completed event(s) synced to Google Calendar.`;
+    }
   };
   document.getElementById('saveInvoiceSettings').onclick = ()=>{
     const nextNumber = parseInt(document.getElementById('inv_s_next').value, 10);
